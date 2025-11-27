@@ -17,6 +17,7 @@ I'd love to hear from you! Whether you have a question, want to collaborate, or 
 
 ## Send a Message
 
+<!-- Replace 'your-form-id' below with your actual Formspree form ID from https://formspree.io -->
 <form action="https://formspree.io/f/your-form-id" method="POST">
   <p>
     <label for="name">Name:</label><br>
