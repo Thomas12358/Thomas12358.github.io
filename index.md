@@ -20,6 +20,11 @@ feature_row:
     url: "https://github.com/Thomas12358/project-three"
     btn_label: "View on GitHub"
     btn_class: "btn--primary"
+  - title: "Project Four"
+    excerpt: "Command-line interface tool for managing and organizing local development environments efficiently."
+    url: "https://github.com/Thomas12358/project-four"
+    btn_label: "View on GitHub"
+    btn_class: "btn--primary"
 ---
 
 # Hello, I'm Thomas
