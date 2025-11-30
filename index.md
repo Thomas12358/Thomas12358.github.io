@@ -29,16 +29,24 @@ feature_row:
 
 # Hello, I'm Thomas
 
-Welcome to my personal portfolio! I'm a developer passionate about building tools and scripts that solve real-world problems. Here you'll find my projects, learn about what I do, and how to get in touch.
+I'm a software engineering manager and consultant with a background in chemical engineering. I specialize in bringing together deep technical knowledge and practical software solutions to solve complex problems.
+
+With over 10 years of experience, I've led teams building scientific software trusted by major energy companies worldwide. My work sits at the intersection of engineering and technology — from process modeling and fluid dynamics to full-stack development and team leadership.
+
+---
+
+## What I Do
+
+- **Consulting** — Helping organizations build better software and technical teams
+- **Software Leadership** — Leading engineering teams to deliver impactful solutions
+- **Scientific Computing** — Developing specialized tools for the energy industry
 
 ---
 
 ## Projects
 
-Check out some of my featured projects below:
-
 {% include feature_row %}
 
 ---
 
-*Feel free to explore my [GitHub](https://github.com/Thomas12358) for more projects and contributions.*
+*Explore my [GitHub](https://github.com/Thomas12358) or [get in touch](/contact/) to discuss how we can work together.*

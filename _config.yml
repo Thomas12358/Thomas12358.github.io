@@ -19,8 +19,8 @@ plugins:
 # Site Author
 author:
   name: "Thomas"
-  bio: "Developer and creator of useful tools and scripts"
-  location: ""
+  bio: "Chemical Engineer turned Software Engineering Leader. Consultant helping teams solve complex problems at the intersection of engineering and technology."
+  location: "Vancouver, Canada"
   links:
     - label: "LinkedIn"
       icon: "fab fa-fw fa-linkedin"
