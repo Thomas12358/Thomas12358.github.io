@@ -19,12 +19,12 @@ plugins:
 # Site Author
 author:
   name: "Thomas"
-  bio: "Chemical Engineer turned Software Engineering Leader. Consultant helping teams solve complex problems at the intersection of engineering and technology."
+  bio: "Chemical Engineer turned Software Engineering Leader. I love using code to solve hard problems & automate life."
   location: "Vancouver, Canada"
   links:
     - label: "LinkedIn"
       icon: "fab fa-fw fa-linkedin"
-      url: "https://linkedin.com/in/thomas"
+      url: "https://www.linkedin.com/in/thomas-charlton-74234565/"
     - label: "GitHub"
       icon: "fab fa-fw fa-github"
       url: "https://github.com/Thomas12358"

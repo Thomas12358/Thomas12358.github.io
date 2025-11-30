@@ -9,7 +9,7 @@ author_profile: true
 
 I'm Thomas — an engineer at heart who bridges the worlds of chemical engineering and software development. I started my career as a metallurgist, earned my PhD studying gas hydrates and fluid flow, and now lead software teams building tools used by energy companies around the globe.
 
-Today, I work as a software engineering manager and consultant based in Vancouver, Canada.
+Today, I work as a consultant based in Vancouver, Canada.
 
 ## My Background
 
@@ -36,7 +36,7 @@ When I'm not working, you can find me on the squash court — I serve as Secreta
 
 Whether you're looking to collaborate, need consulting help, or just want to chat:
 
-- **LinkedIn**: [Connect with me](https://linkedin.com/in/thomas)
+- **LinkedIn**: [Connect with me](https://www.linkedin.com/in/thomas-charlton-74234565/)
 - **GitHub**: [View my work](https://github.com/Thomas12358)
 - **Contact**: [Send me a message](/contact/)
 
