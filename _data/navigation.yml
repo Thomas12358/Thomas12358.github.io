@@ -3,5 +3,7 @@ main:
     url: /
   - title: "About"
     url: /about/
+  - title: "Projects"
+    url: /lifeos/
   - title: "Contact"
     url: /contact/
