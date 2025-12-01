@@ -3,10 +3,7 @@ title: "SpatialView - 3D Digital Twin Platform"
 permalink: /spatialview/
 layout: single
 author_profile: false
-classes: wide
 ---
-
-# SpatialView: Rapid Worksite Virtualization
 
 **SpatialView** rapidly virtualizes worksites by transforming video into immersive 3D digital twins. Our automated platform processes videos from any source - smartphone, drone, or professional scanner - and returns a secure web link within hours, enabling collaborative workflows and intelligent asset management.
 

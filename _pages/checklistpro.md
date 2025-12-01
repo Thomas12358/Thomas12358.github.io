@@ -1,12 +1,9 @@
 ---
-title: "ChecklistPro - Automate Everyday Checklists"
+title: "ChecklistPro - Automate Checklists"
 permalink: /checklistpro/
 layout: single
 author_profile: false
-classes: wide
 ---
-
-# ChecklistPro: Automate Everyday Checklists
 
 **ChecklistPro** automates routine checklists using computer vision and AI. Transform manual checklist workflows into intelligent, automated processes that reduce errors, save time, and ensure consistency across your operations.
 

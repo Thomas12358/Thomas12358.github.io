@@ -5,6 +5,7 @@ permalink: /about/
 author_profile: true
 ---
 
+![Thomas Charlton](/assets/images/profile.jpg){: .align-left style="width: 200px; margin-right: 20px;"}
 I'm Thomas — an engineer at heart who bridges the worlds of chemical engineering and software development.
 I started my career as a metallurgist, earned my PhD studying gas hydrates and fluid flow, and have lead software teams building tools used by energy companies around the globe.
 

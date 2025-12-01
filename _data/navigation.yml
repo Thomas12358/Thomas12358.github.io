@@ -3,9 +3,11 @@ main:
     url: /
   - title: "About"
     url: /about/
-  - title: "lifeOS"
+  - title: "LifeOS"
     url: /lifeos/
-  - title: "spatialview"
+  - title: "SpatialView"
     url: /spatialview/
+  - title: "ChecklistPro"
+    url: /checklistpro/
   - title: "Contact"
     url: /contact/

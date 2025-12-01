@@ -1,5 +1,5 @@
 # Site Settings
-title: "Thomas Charlton"
+title: "My Portfolio"
 name: "Thomas"
 description: "Personal portfolio and project showcase"
 url: "https://thomas12358.github.io"
@@ -17,8 +17,8 @@ plugins:
 
 # Site Author
 author:
-  name: "Thomas"
-  bio: "Chemical Engineer turned Software Engineering Leader. I love using code to solve hard problems & automate life."
+  name: "Thomas Charlton"
+  bio: "A chemical engineer that likes to code."
   location: "Vancouver, Canada"
   links:
     - label: "LinkedIn"
