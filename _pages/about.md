@@ -7,7 +7,8 @@ author_profile: true
 
 ## Who I Am
 
-I'm Thomas — an engineer at heart who bridges the worlds of chemical engineering and software development. I started my career as a metallurgist, earned my PhD studying gas hydrates and fluid flow, and now lead software teams building tools used by energy companies around the globe.
+I'm Thomas — an engineer at heart who bridges the worlds of chemical engineering and software development.
+I started my career as a metallurgist, earned my PhD studying gas hydrates and fluid flow, and have lead software teams building tools used by energy companies around the globe.
 
 Today, I work as a consultant based in Vancouver, Canada.
 
@@ -15,8 +16,8 @@ Today, I work as a consultant based in Vancouver, Canada.
 
 My journey has taken me across disciplines and continents:
 
-- **PhD in Chemical Engineering** from The University of Western Australia, where I researched predicting hydrate blockages in gas pipelines
 - **Started in mining** at BHP, developing predictive tools for ore processing
+- **PhD in Chemical Engineering** split between The University of Western Australia and Colorado School of Mines, where I researched predicting hydrate blockages in gas pipelines
 - **Moved into software** at Quorum Software, where I now lead a team building production forecasting software
 - **Co-founded spatialview.io**, exploring new ways to visualize and analyze spatial data
 

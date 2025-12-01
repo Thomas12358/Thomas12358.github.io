@@ -3,7 +3,9 @@ main:
     url: /
   - title: "About"
     url: /about/
-  - title: "Projects"
+  - title: "lifeOS"
     url: /lifeos/
+  - title: "spatialview"
+    url: /spatialview/
   - title: "Contact"
     url: /contact/
