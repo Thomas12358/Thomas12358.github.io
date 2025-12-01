@@ -45,7 +45,7 @@ Get instant insights and reports. Share results with your team immediately for f
 - **Accurate**: Computer vision eliminates human error and oversight
 - **Scalable**: Process thousands of checklists without adding staff
 - **Compliant**: Automatic documentation creates audit trails
-- **Easy**: No complex setup—works with standard cameras
+- **Easy**: No complex setup - works with standard cameras
 
 ## Get Started
 
