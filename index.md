@@ -2,7 +2,7 @@
 layout: single
 title: "Hello, I'm Thomas"
 permalink: /
-author_profile: false
+author_profile: true
 
 feature_row:
   - title: "LifeOS"
@@ -15,21 +15,17 @@ feature_row:
     url: "https://spatialview.io"
     btn_label: "Open Page"
     btn_class: "btn--primary"
+  - title: "ChecklistPro"
+    excerpt: "Automate everyday checklists using computer vision & AI."
+    url: "https://checklist.pro"
+    btn_label: "Open Page"
+    btn_class: "btn--primary"
 
 ---
 
 I'm a software consultant with a background in chemical engineering.
 With over 10 years of experience, I've led teams building scientific software trusted by major energy companies worldwide.
 My work sits at the intersection of engineering and technology — from process modeling and fluid dynamics to full-stack development and team leadership.
-
----
-
-## What I Do
-
-- **Scientific Computing** — Developing specialized tools for the energy industry
-- **General Tools** — Developing open-source tools to help automate life's mundane tasks
-- **3D Modelling & AI** — Co-Founder of SpatialView, building rapid video-to-3D software
-- **Consulting** — Helping organizations build better software and technical teams
 
 ## Projects
 

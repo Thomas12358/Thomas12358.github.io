@@ -1,12 +1,10 @@
 ---
-title: "lifeOS - Personal Management System"
+title: "lifeOS - Life Operating System"
 permalink: /lifeos/
 layout: single
 author_profile: false
 classes: wide
 ---
-
-# lifeOS: Personal Life Operating System
 
 <div id="lifeos-readme"></div>
 
