@@ -8,7 +8,7 @@ classes: wide
 
 # SpatialView: Rapid Worksite Virtualization
 
-**SpatialView** rapidly virtualizes worksites by transforming video into immersive 3D digital twins. Our automated platform processes videos from any source—smartphone, drone, or professional scanner—and returns a secure web link within hours, enabling collaborative workflows and intelligent asset management.
+**SpatialView** rapidly virtualizes worksites by transforming video into immersive 3D digital twins. Our automated platform processes videos from any source - smartphone, drone, or professional scanner - and returns a secure web link within hours, enabling collaborative workflows and intelligent asset management.
 
 ## How It Works
 
@@ -23,7 +23,7 @@ classes: wide
 Compare current site conditions with original plans to quickly identify deviations, potential issues, and progress tracking. Make data-driven decisions about project changes.
 
 ### Intelligent Asset Search
-Find key assets in seconds. Ask "Where are the fire extinguishers?" or search for specific equipment, and instantly locate them in your 3D model—no more manual searching through hours of footage.
+Find key assets in seconds. Ask "Where are the fire extinguishers?" or search for specific equipment, and instantly locate them in your 3D model - no more manual searching through hours of footage.
 
 ### Document & Record Linking
 Associate documents, records, photos, and notes directly with virtual objects in the scene. Keep all project information connected to its physical location for complete context and traceability.
@@ -42,7 +42,7 @@ Access the latest site data from anywhere. Share the secure web link with stakeh
 ## Why SpatialView?
 
 - **Fast**: From video to 3D digital twin in hours, not days
-- **Accessible**: Works with video from any source—no special equipment needed
+- **Accessible**: Works with video from any source - no special equipment needed
 - **Secure**: All data hosted securely with controlled access
 - **Collaborative**: Share insights with your entire team instantly
 - **Intelligent**: Search and analyze your site data with powerful tools
