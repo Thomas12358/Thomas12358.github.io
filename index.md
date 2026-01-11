@@ -23,10 +23,6 @@ feature_row:
 
 ---
 
-I'm a software consultant with a background in chemical engineering.
-With over 10 years of experience, I've led teams building scientific software trusted by major energy companies worldwide.
-My work sits at the intersection of engineering and technology — from process modeling and fluid dynamics to full-stack development and team leadership.
-
 ## Projects
 
 {% include feature_row %}
