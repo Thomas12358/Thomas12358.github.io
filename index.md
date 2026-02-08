@@ -20,6 +20,11 @@ feature_row:
     url: "/checklistpro/"
     btn_label: "View Project"
     btn_class: "btn--primary"
+  - title: "Roots"
+    excerpt: "Plan bike trips with GPX routes on an interactive map."
+    url: "/roots/"
+    btn_label: "View Project"
+    btn_class: "btn--primary"
 
 ---
 
