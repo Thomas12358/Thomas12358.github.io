@@ -16,12 +16,12 @@
 //   (localhost is included by default for testing)
 
 const FIREBASE_CONFIG = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.firebasestorage.app",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyDERy4BshhKZzdlS0uqv67BHSeqn53JxXM",
+  authDomain: "roots-eddf5.firebaseapp.com",
+  projectId: "roots-eddf5",
+  storageBucket: "roots-eddf5.firebasestorage.app",
+  messagingSenderId: "6298459601",
+  appId: "1:6298459601:web:cf83b471ae8de492b814f0"
 };
 
 // Set this to your Google account email to restrict who can upload
