@@ -525,7 +525,33 @@ classes: wide
     const lines = csvText.trim().split('\n');
     if (lines.length < 2) return [];
     
-    const headers = lines[0].split(',').map(h => h.trim());
+    // Simple CSV parser that handles quoted fields
+    function parseCSVLine(line) {
+      const result = [];
+      let current = '';
+      let inQuotes = false;
+      
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === ',' && !inQuotes) {
+          result.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    }
+    
+    const headers = parseCSVLine(lines[0]);
     const nameIdx = headers.findIndex(h => h.toLowerCase() === 'name');
     const latIdx = headers.findIndex(h => h.toLowerCase() === 'latitude' || h.toLowerCase() === 'lat');
     const lonIdx = headers.findIndex(h => h.toLowerCase() === 'longitude' || h.toLowerCase() === 'lon' || h.toLowerCase() === 'lng');
@@ -538,7 +564,7 @@ classes: wide
     
     const parsedPoints = [];
     for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',').map(v => v.trim());
+      const values = parseCSVLine(lines[i]);
       if (values.length < 2) continue;
       
       const lat = parseFloat(values[latIdx]);
@@ -547,7 +573,8 @@ classes: wide
       
       const metadata = {};
       headers.forEach((header, idx) => {
-        if (idx !== latIdx && idx !== lonIdx && values[idx]) {
+        // Exclude lat, lon, name, and url from metadata
+        if (idx !== latIdx && idx !== lonIdx && idx !== nameIdx && idx !== urlIdx && values[idx]) {
           metadata[header] = values[idx];
         }
       });
@@ -578,7 +605,7 @@ classes: wide
     
     let popupContent = '<b>' + escapeHtml(pointData.name) + '</b>';
     if (pointData.url) {
-      popupContent += '<br><a href="' + escapeAttr(pointData.url) + '" target="_blank" rel="noopener">View Details</a>';
+      popupContent += '<br><a href="' + escapeAttr(pointData.url) + '" target="_blank" rel="noopener" aria-label="View details for ' + escapeAttr(pointData.name) + '">View Details</a>';
     }
     marker.bindPopup(popupContent);
     
@@ -595,22 +622,25 @@ classes: wide
     };
     points.push(point);
     
-    map.setView([pointData.lat, pointData.lon], 11);
     renderPointToggles();
   }
 
-  function addPointsFromCSV(csvText, fileName, firebaseDocId) {
+  function addPointsFromCSV(csvText, fileName, docIdMap) {
     const parsedPoints = parseCSV(csvText);
     if (parsedPoints.length === 0) {
       alert('No valid points found in ' + fileName);
       return;
     }
     
-    parsedPoints.forEach(p => addPoint(p, fileName, firebaseDocId));
+    parsedPoints.forEach((p, idx) => {
+      const docId = docIdMap ? docIdMap[idx] : null;
+      addPoint(p, fileName, docId);
+    });
     
-    // Fit map to show all points
+    // Fit map to show newly added points
     if (parsedPoints.length > 0) {
-      const group = L.featureGroup(points.map(p => p.marker));
+      const newMarkers = points.slice(-parsedPoints.length).map(p => p.marker);
+      const group = L.featureGroup(newMarkers);
       map.fitBounds(group.getBounds(), { padding: [30, 30] });
     }
   }
@@ -724,9 +754,7 @@ classes: wide
     if (data.metadata) {
       html += '<label>Additional Data</label>';
       Object.entries(data.metadata).forEach(([key, value]) => {
-        if (key !== 'name' && key !== 'url') {
-          html += '<div class="meta-view-value"><strong>' + escapeHtml(key) + ':</strong> ' + escapeHtml(value) + '</div>';
-        }
+        html += '<div class="meta-view-value"><strong>' + escapeHtml(key) + ':</strong> ' + escapeHtml(value) + '</div>';
       });
     }
     
@@ -933,7 +961,7 @@ classes: wide
 
     // Create a batch write for all points
     const batch = db.batch();
-    const promises = [];
+    const docIds = [];
     
     parsedPoints.forEach(p => {
       const docRef = db.collection('points').doc();
@@ -947,11 +975,11 @@ classes: wide
         storagePath: storagePath,
         uploadedAt: firebase.firestore.FieldValue.serverTimestamp()
       });
-      promises.push(docRef.id);
+      docIds.push(docRef.id);
     });
 
     return batch.commit().then(() => {
-      addPointsFromCSV(csvText, fileName, promises[0]);
+      addPointsFromCSV(csvText, fileName, docIds);
     });
   }
 
@@ -988,22 +1016,22 @@ classes: wide
     const pointsToDelete = points.filter(p => p.fileName === fileName && p.firebaseDocId);
     if (pointsToDelete.length === 0) return;
 
-    const batch = db.batch();
-    let storagePath = null;
-    
-    pointsToDelete.forEach(p => {
-      const docRef = db.collection('points').doc(p.firebaseDocId);
-      batch.delete(docRef);
-    });
-
-    // Get storage path from first point to delete the CSV file
+    // Get storage path from first point before deleting
     db.collection('points').doc(pointsToDelete[0].firebaseDocId).get()
       .then(doc => {
         const data = doc.data();
-        storagePath = data.storagePath;
-        return batch.commit();
+        const storagePath = data.storagePath;
+        
+        // Create batch to delete all point documents
+        const batch = db.batch();
+        pointsToDelete.forEach(p => {
+          const docRef = db.collection('points').doc(p.firebaseDocId);
+          batch.delete(docRef);
+        });
+        
+        return batch.commit().then(() => storagePath);
       })
-      .then(() => {
+      .then((storagePath) => {
         // Delete CSV from Storage
         if (storagePath) {
           return storage.ref(storagePath).delete();
