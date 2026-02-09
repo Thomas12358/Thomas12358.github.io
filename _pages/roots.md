@@ -391,6 +391,7 @@ classes: wide
   let db = null;
   let storage = null;
   let firebaseReady = false;
+  const loadedFirebaseIds = new Set();
 
   function initFirebase() {
     // Check if config is set (not placeholder values)
@@ -414,8 +415,11 @@ classes: wide
       firebase.auth().onAuthStateChanged(user => {
         currentUser = user;
         updateAuthUI();
-        if (firebaseReady) loadFirebaseRoutes();
+        loadFirebaseRoutes();
       });
+
+      // Load routes immediately — don't wait for auth state
+      loadFirebaseRoutes();
 
       authBtn.addEventListener('click', () => {
         if (currentUser) {
@@ -466,11 +470,16 @@ classes: wide
     db.collection('routes').orderBy('uploadedAt', 'desc').get()
       .then(snapshot => {
         snapshot.forEach(doc => {
+          if (loadedFirebaseIds.has(doc.id)) return;
+          loadedFirebaseIds.add(doc.id);
           const data = doc.data();
           // Download the GPX file from Storage
           storage.ref(data.storagePath).getDownloadURL()
             .then(url => fetch(url))
-            .then(res => res.text())
+            .then(res => {
+              if (!res.ok) throw new Error('HTTP ' + res.status);
+              return res.text();
+            })
             .then(gpxText => addRoute(gpxText, data.fileName, doc.id))
             .catch(err => console.error('Error loading route ' + data.fileName + ':', err));
         });
