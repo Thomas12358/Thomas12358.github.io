@@ -17,6 +17,13 @@ service cloud.firestore {
       allow write: if request.auth != null
                    && request.auth.token.email == 'YOUR_EMAIL@gmail.com';
     }
+    match /points/{pointId} {
+      // Anyone can read points (public page)
+      allow read: if true;
+      // Only your admin account can write
+      allow write: if request.auth != null
+                   && request.auth.token.email == 'YOUR_EMAIL@gmail.com';
+    }
   }
 }
 ```
@@ -37,6 +44,15 @@ service firebase.storage {
                    && request.auth.token.email == 'YOUR_EMAIL@gmail.com';
       // Limit uploads to 10MB
       allow create: if request.resource.size < 10 * 1024 * 1024;
+    }
+    match /csv/{allPaths=**} {
+      // Anyone can read (download CSV files)
+      allow read: if true;
+      // Only your admin account can upload/delete
+      allow write: if request.auth != null
+                   && request.auth.token.email == 'YOUR_EMAIL@gmail.com';
+      // Limit uploads to 5MB
+      allow create: if request.resource.size < 5 * 1024 * 1024;
     }
   }
 }
