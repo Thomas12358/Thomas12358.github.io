@@ -861,14 +861,30 @@ classes: wide
       if (isAdmin()) {
         authStatus.textContent = 'Signed in as ' + currentUser.email + ' (admin)';
         uploadArea.style.display = 'block';
+        // Show admin link
+        let adminLink = document.getElementById('admin-link');
+        if (!adminLink) {
+          adminLink = document.createElement('a');
+          adminLink.id = 'admin-link';
+          adminLink.href = '{{ "/roots/admin/" | relative_url }}';
+          adminLink.className = 'roots-btn';
+          adminLink.textContent = 'Admin Editor';
+          adminLink.style.textDecoration = 'none';
+          document.getElementById('admin-bar').appendChild(adminLink);
+        }
+        adminLink.style.display = '';
       } else {
         authStatus.textContent = 'Signed in as ' + currentUser.email;
         uploadArea.style.display = 'none';
+        const adminLink = document.getElementById('admin-link');
+        if (adminLink) adminLink.style.display = 'none';
       }
     } else {
       authBtn.textContent = 'Sign In';
       authStatus.textContent = '';
       uploadArea.style.display = 'none';
+      const adminLink = document.getElementById('admin-link');
+      if (adminLink) adminLink.style.display = 'none';
     }
     renderToggles(); // refresh delete buttons
   }
