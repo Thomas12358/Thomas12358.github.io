@@ -280,6 +280,7 @@ classes: wide
   <input type="file" id="gpx-file-input" accept=".gpx" multiple style="display:none;">
   <button class="roots-btn" id="add-csv-btn" title="Load a CSV file with GPS points">+ Add CSV Points</button>
   <input type="file" id="csv-file-input" accept=".csv" multiple style="display:none;">
+  <button class="roots-btn" id="add-gmaps-btn" title="Add a point from Google Maps URL">+ Add Google Maps Point</button>
   <span id="route-toggles"></span>
   <span id="point-toggles"></span>
   <button class="roots-btn" id="fit-bounds-btn" title="Zoom to fit all routes">Fit All</button>
@@ -293,6 +294,31 @@ classes: wide
     <div class="meta-actions">
       <button class="roots-btn" id="meta-save-btn" style="display:none;">Save</button>
       <button class="roots-btn" id="meta-close-btn">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Google Maps Point modal -->
+<div class="meta-overlay" id="gmaps-overlay">
+  <div class="meta-modal" id="gmaps-modal">
+    <h3>Add Google Maps Point</h3>
+    <div id="gmaps-body">
+      <label for="gmaps-url-input">Google Maps URL</label>
+      <input type="text" id="gmaps-url-input" placeholder="Paste Google Maps URL here..." />
+      
+      <label for="gmaps-type-input">Point Type</label>
+      <select id="gmaps-type-input" class="meta-modal" style="width: 100%; padding: 0.5em; background: #252a34; border: 1px solid #444; border-radius: 4px; color: #e0e0e0; font-size: 0.9em; font-family: inherit; box-sizing: border-box;">
+        <option value="Campsite">Campsite</option>
+        <option value="Onsen">Onsen</option>
+        <option value="Roadside Station">Roadside Station</option>
+        <option value="Must See">Must See</option>
+        <option value="Hotel">Hotel</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+    <div class="meta-actions">
+      <button class="roots-btn" id="gmaps-add-btn">Add Point</button>
+      <button class="roots-btn" id="gmaps-close-btn">Cancel</button>
     </div>
   </div>
 </div>
@@ -339,6 +365,14 @@ classes: wide
     'Must See': {
       color: '#f1c40f',
       svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="10" fill="#f1c40f" stroke="#fff" stroke-width="1.5"/><polygon points="12,5 13.8,10.2 19.4,10.2 14.8,13.4 16.6,18.6 12,15.4 7.4,18.6 9.2,13.4 4.6,10.2 10.2,10.2" fill="#fff"/></svg>'
+    },
+    'Hotel': {
+      color: '#9b59b6',
+      svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="10" fill="#9b59b6" stroke="#fff" stroke-width="1.5"/><rect x="7" y="8" width="10" height="9" rx="1" fill="none" stroke="#fff" stroke-width="1.5"/><path d="M7 11h10" stroke="#fff" stroke-width="1"/><rect x="9" y="13" width="2" height="3" fill="#fff"/><rect x="13" y="13" width="2" height="3" fill="#fff"/></svg>'
+    },
+    'Other': {
+      color: '#95a5a6',
+      svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="10" fill="#95a5a6" stroke="#fff" stroke-width="1.5"/><path d="M12 8v8M8 12h8" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>'
     },
     '_default': {
       color: '#7f8c8d',
@@ -830,6 +864,130 @@ classes: wide
     });
     csvFileInput.value = '';
   });
+
+  // ── Google Maps Point Input ────────────────────────────────
+  const gmapsOverlay = document.getElementById('gmaps-overlay');
+  const gmapsUrlInput = document.getElementById('gmaps-url-input');
+  const gmapsTypeInput = document.getElementById('gmaps-type-input');
+  const gmapsAddBtn = document.getElementById('gmaps-add-btn');
+  const gmapsCloseBtn = document.getElementById('gmaps-close-btn');
+
+  document.getElementById('add-gmaps-btn').addEventListener('click', () => {
+    gmapsUrlInput.value = '';
+    gmapsTypeInput.value = 'Campsite';
+    gmapsOverlay.classList.add('open');
+    gmapsUrlInput.focus();
+  });
+
+  gmapsCloseBtn.addEventListener('click', closeGmapsModal);
+  gmapsOverlay.addEventListener('click', (e) => {
+    if (e.target === gmapsOverlay) closeGmapsModal();
+  });
+
+  function closeGmapsModal() {
+    gmapsOverlay.classList.remove('open');
+  }
+
+  function parseGoogleMapsUrl(url) {
+    try {
+      // Extract name from URL (after /place/ and before /@)
+      const placeMatch = url.match(/\/place\/([^/@]+)/);
+      const name = placeMatch ? decodeURIComponent(placeMatch[1].replace(/\+/g, ' ')) : 'Unnamed Location';
+      
+      // Extract coordinates - they appear after /@ in format: lat,lon,zoom
+      const coordMatch = url.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+      if (!coordMatch) {
+        // Try alternative format with !3d and !4d
+        const altCoordMatch = url.match(/!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/);
+        if (!altCoordMatch) {
+          throw new Error('Could not extract coordinates from URL');
+        }
+        return {
+          name: name,
+          lat: parseFloat(altCoordMatch[1]),
+          lon: parseFloat(altCoordMatch[2])
+        };
+      }
+      
+      return {
+        name: name,
+        lat: parseFloat(coordMatch[1]),
+        lon: parseFloat(coordMatch[2])
+      };
+    } catch (err) {
+      throw new Error('Invalid Google Maps URL format');
+    }
+  }
+
+  gmapsAddBtn.addEventListener('click', () => {
+    const url = gmapsUrlInput.value.trim();
+    const type = gmapsTypeInput.value;
+    
+    if (!url) {
+      alert('Please enter a Google Maps URL');
+      return;
+    }
+    
+    try {
+      const parsed = parseGoogleMapsUrl(url);
+      
+      // Create point data
+      const pointData = {
+        name: parsed.name,
+        lat: parsed.lat,
+        lon: parsed.lon,
+        url: url,
+        metadata: {
+          Type: type
+        }
+      };
+      
+      // If Firebase is available and user is admin, upload to Firebase
+      if (firebaseReady && isAdmin()) {
+        uploadGoogleMapsPointToFirebase(pointData);
+      } else {
+        // Otherwise, just add locally
+        addPoint(pointData, 'Google Maps - ' + parsed.name, null);
+        // Fit map to show the new point
+        map.setView([parsed.lat, parsed.lon], 14);
+      }
+      
+      closeGmapsModal();
+    } catch (err) {
+      alert('Error parsing Google Maps URL: ' + err.message);
+    }
+  });
+
+  function uploadGoogleMapsPointToFirebase(pointData) {
+    const statusEl = document.getElementById('upload-status');
+    statusEl.textContent = 'Adding point to Firebase...';
+
+    db.collection('points').add({
+      name: pointData.name,
+      lat: pointData.lat,
+      lon: pointData.lon,
+      url: pointData.url,
+      metadata: pointData.metadata,
+      fileName: 'Google Maps - ' + pointData.name,
+      storagePath: null, // No file storage for manual points
+      uploadedAt: firebase.firestore.FieldValue.serverTimestamp()
+    })
+    .then(docRef => {
+      addPoint(pointData, 'Google Maps - ' + pointData.name, docRef.id);
+      // Fit map to show the new point
+      map.setView([pointData.lat, pointData.lon], 14);
+      statusEl.textContent = 'Point added successfully ✓';
+      setTimeout(() => { statusEl.textContent = ''; }, 3000);
+    })
+    .catch(err => {
+      console.error('Firebase upload error:', err);
+      statusEl.textContent = 'Upload failed: ' + err.message;
+      alert('Failed to upload to Firebase. Point added locally only.');
+      // Fallback to local add
+      addPoint(pointData, 'Google Maps - ' + pointData.name, null);
+      map.setView([pointData.lat, pointData.lon], 14);
+    });
+  }
 
   // ── Firebase Integration ───────────────────────────────────
   let currentUser = null;
