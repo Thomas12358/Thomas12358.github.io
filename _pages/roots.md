@@ -473,15 +473,24 @@ classes: wide
           if (loadedFirebaseIds.has(doc.id)) return;
           loadedFirebaseIds.add(doc.id);
           const data = doc.data();
-          // Download the GPX file from Storage
-          storage.ref(data.storagePath).getDownloadURL()
-            .then(url => fetch(url))
-            .then(res => {
-              if (!res.ok) throw new Error('HTTP ' + res.status);
-              return res.text();
-            })
-            .then(gpxText => addRoute(gpxText, data.fileName, doc.id))
-            .catch(err => console.error('Error loading route ' + data.fileName + ':', err));
+          if (data.gpxContent) {
+            // Read GPX directly from Firestore (no CORS issues)
+            addRoute(data.gpxContent, data.fileName, doc.id);
+          } else {
+            // Fallback for old docs without gpxContent: fetch from Storage
+            storage.ref(data.storagePath).getDownloadURL()
+              .then(url => fetch(url))
+              .then(res => {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.text();
+              })
+              .then(gpxText => {
+                addRoute(gpxText, data.fileName, doc.id);
+                // Backfill gpxContent so future loads avoid CORS
+                doc.ref.update({ gpxContent: gpxText }).catch(() => {});
+              })
+              .catch(err => console.error('Error loading route ' + data.fileName + ':', err));
+          }
         });
       })
       .catch(err => console.error('Firestore read error:', err));
@@ -497,27 +506,31 @@ classes: wide
     const storagePath = 'gpx/' + Date.now() + '_' + file.name;
     const storageRef = storage.ref(storagePath);
 
-    storageRef.put(file)
-      .then(() => {
-        // Save metadata to Firestore
-        return db.collection('routes').add({
-          fileName: file.name,
-          storagePath: storagePath,
-          uploadedAt: firebase.firestore.FieldValue.serverTimestamp()
+    // Read file text first, then upload both to Storage and Firestore
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const gpxText = ev.target.result;
+      storageRef.put(file)
+        .then(() => {
+          // Save metadata + GPX content to Firestore (avoids CORS on Storage fetch)
+          return db.collection('routes').add({
+            fileName: file.name,
+            storagePath: storagePath,
+            gpxContent: gpxText,
+            uploadedAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        })
+        .then(docRef => {
+          statusEl.textContent = 'Uploaded ' + file.name + ' ✓';
+          addRoute(gpxText, file.name, docRef.id);
+          setTimeout(() => { statusEl.textContent = ''; }, 3000);
+        })
+        .catch(err => {
+          console.error('Upload error:', err);
+          statusEl.textContent = 'Upload failed: ' + err.message;
         });
-      })
-      .then(docRef => {
-        statusEl.textContent = 'Uploaded ' + file.name + ' ✓';
-        // Read the file and add to map immediately
-        const reader = new FileReader();
-        reader.onload = (ev) => addRoute(ev.target.result, file.name, docRef.id);
-        reader.readAsText(file);
-        setTimeout(() => { statusEl.textContent = ''; }, 3000);
-      })
-      .catch(err => {
-        console.error('Upload error:', err);
-        statusEl.textContent = 'Upload failed: ' + err.message;
-      });
+    };
+    reader.readAsText(file);
   }
 
   // ── Delete route from Firebase ─────────────────────────────
