@@ -15,6 +15,11 @@ classes: wide
     z-index: 1;
   }
 
+  .point-type-icon {
+    background: none !important;
+    border: none !important;
+  }
+
   .roots-controls {
     display: flex;
     flex-wrap: wrap;
@@ -313,6 +318,46 @@ classes: wide
   const points = []; // Array for CSV points
   let colorIdx = 0;
 
+  // Type-based marker icons using SVG divIcons
+  const POINT_ICON_SIZE = [18, 18];
+  const POINT_ICON_ANCHOR = [9, 9];
+  const POINT_POPUP_ANCHOR = [0, -10];
+
+  const POINT_TYPE_ICONS = {
+    'Onsen': {
+      color: '#e74c3c',
+      svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="10" fill="#e74c3c" stroke="#fff" stroke-width="1.5"/><path d="M8 13c0-2.2 1.8-4 4-4s4 1.8 4 4" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M9.5 8.5c0.3-1 0.7-1.5 0.5-2.5M12 7.5c0.3-1 0.7-1.5 0.5-2.5M14.5 8.5c0.3-1 0.7-1.5 0.5-2.5" fill="none" stroke="#fff" stroke-width="1" stroke-linecap="round"/></svg>'
+    },
+    'Campsite': {
+      color: '#27ae60',
+      svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="10" fill="#27ae60" stroke="#fff" stroke-width="1.5"/><path d="M12 6L6 17h12L12 6z" fill="none" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 17v-3h4v3" fill="none" stroke="#fff" stroke-width="1" stroke-linejoin="round"/></svg>'
+    },
+    'Roadside Station': {
+      color: '#3498db',
+      svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="10" fill="#3498db" stroke="#fff" stroke-width="1.5"/><rect x="7" y="9" width="10" height="7" rx="1" fill="none" stroke="#fff" stroke-width="1.5"/><path d="M7 12h10" stroke="#fff" stroke-width="1"/><path d="M10 9V7h4v2" fill="none" stroke="#fff" stroke-width="1.2"/></svg>'
+    },
+    'Must See': {
+      color: '#f1c40f',
+      svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="10" fill="#f1c40f" stroke="#fff" stroke-width="1.5"/><polygon points="12,5 13.8,10.2 19.4,10.2 14.8,13.4 16.6,18.6 12,15.4 7.4,18.6 9.2,13.4 4.6,10.2 10.2,10.2" fill="#fff"/></svg>'
+    },
+    '_default': {
+      color: '#7f8c8d',
+      svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="10" fill="#7f8c8d" stroke="#fff" stroke-width="1.5"/><circle cx="12" cy="12" r="3" fill="#fff"/></svg>'
+    }
+  };
+
+  function getPointIcon(type) {
+    const key = type && POINT_TYPE_ICONS[type] ? type : '_default';
+    const iconDef = POINT_TYPE_ICONS[key];
+    return L.divIcon({
+      html: iconDef.svg,
+      className: 'point-type-icon',
+      iconSize: POINT_ICON_SIZE,
+      iconAnchor: POINT_ICON_ANCHOR,
+      popupAnchor: POINT_POPUP_ANCHOR
+    });
+  }
+
   const map = L.map('map').setView([49.25, -123.1], 11);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -600,15 +645,9 @@ classes: wide
   }
 
   function addPoint(pointData, fileName, firebaseDocId) {
+    const pointType = pointData.metadata ? (pointData.metadata.Type || pointData.metadata.type || null) : null;
     const marker = L.marker([pointData.lat, pointData.lon], {
-      icon: L.icon({
-        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-        iconSize: [25, 41],
-        iconAnchor: [12, 41],
-        popupAnchor: [1, -34],
-        shadowSize: [41, 41]
-      })
+      icon: getPointIcon(pointType)
     }).addTo(map);
     
     let popupContent = '<b>' + escapeHtml(pointData.name) + '</b>';
