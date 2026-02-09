@@ -146,6 +146,114 @@ classes: wide
   .delete-btn:hover {
     background: rgba(255, 107, 107, 0.15);
   }
+
+  .info-btn {
+    background: none;
+    border: none;
+    color: #58a6ff;
+    cursor: pointer;
+    font-size: 0.8em;
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    margin-left: 0.3em;
+  }
+
+  .info-btn:hover {
+    background: rgba(88, 166, 255, 0.15);
+  }
+
+  /* Metadata modal */
+  .meta-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .meta-overlay.open {
+    display: flex;
+  }
+
+  .meta-modal {
+    background: #1e2330;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 1.5em;
+    width: 90%;
+    max-width: 500px;
+    max-height: 80vh;
+    overflow-y: auto;
+    color: #e0e0e0;
+  }
+
+  .meta-modal h3 {
+    margin: 0 0 1em 0;
+    color: #58a6ff;
+    font-size: 1.1em;
+  }
+
+  .meta-modal label {
+    display: block;
+    font-size: 0.85em;
+    color: #aaa;
+    margin-bottom: 0.3em;
+    margin-top: 0.8em;
+  }
+
+  .meta-modal input[type="text"],
+  .meta-modal textarea {
+    width: 100%;
+    padding: 0.5em;
+    background: #252a34;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-size: 0.9em;
+    font-family: inherit;
+    box-sizing: border-box;
+  }
+
+  .meta-modal input[type="text"]:focus,
+  .meta-modal textarea:focus {
+    outline: none;
+    border-color: #58a6ff;
+  }
+
+  .meta-modal textarea {
+    resize: vertical;
+    min-height: 60px;
+  }
+
+  .meta-modal .meta-actions {
+    margin-top: 1.2em;
+    display: flex;
+    gap: 0.5em;
+    justify-content: flex-end;
+  }
+
+  .meta-modal .meta-link {
+    color: #58a6ff;
+    text-decoration: none;
+    word-break: break-all;
+  }
+
+  .meta-modal .meta-link:hover {
+    text-decoration: underline;
+  }
+
+  .meta-modal .meta-view-value {
+    font-size: 0.95em;
+    margin-bottom: 0.2em;
+    color: #e0e0e0;
+  }
+
+  .meta-modal .meta-view-value.empty {
+    color: #666;
+    font-style: italic;
+  }
 </style>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -167,6 +275,18 @@ classes: wide
   <input type="file" id="gpx-file-input" accept=".gpx" multiple style="display:none;">
   <span id="route-toggles"></span>
   <button class="roots-btn" id="fit-bounds-btn" title="Zoom to fit all routes">Fit All</button>
+</div>
+
+<!-- Metadata modal -->
+<div class="meta-overlay" id="meta-overlay">
+  <div class="meta-modal" id="meta-modal">
+    <h3 id="meta-title">Route Info</h3>
+    <div id="meta-body"></div>
+    <div class="meta-actions">
+      <button class="roots-btn" id="meta-save-btn" style="display:none;">Save</button>
+      <button class="roots-btn" id="meta-close-btn">Close</button>
+    </div>
+  </div>
 </div>
 
 <div id="map"></div>
@@ -303,8 +423,18 @@ classes: wide
       lbl.appendChild(dot);
       lbl.appendChild(document.createTextNode(r.routeName));
 
+      // Show info button for Firebase routes (viewable by anyone)
+      if (r.firebaseDocId) {
+        const info = document.createElement('button');
+        info.className = 'info-btn';
+        info.textContent = 'ℹ';
+        info.title = 'Route info';
+        info.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openMetadataModal(i); });
+        lbl.appendChild(info);
+      }
+
       // Show delete button for Firebase routes when admin is logged in
-      if (r.firebaseDocId && currentUser) {
+      if (r.firebaseDocId && isAdmin()) {
         const del = document.createElement('button');
         del.className = 'delete-btn';
         del.textContent = '✕';
@@ -556,6 +686,131 @@ classes: wide
         console.error('Delete error:', err);
         alert('Delete failed: ' + err.message);
       });
+  }
+
+  // ── Metadata modal ──────────────────────────────────────────
+  let metaRouteIdx = null;
+
+  const metaOverlay = document.getElementById('meta-overlay');
+  const metaTitle = document.getElementById('meta-title');
+  const metaBody = document.getElementById('meta-body');
+  const metaSaveBtn = document.getElementById('meta-save-btn');
+  const metaCloseBtn = document.getElementById('meta-close-btn');
+
+  metaCloseBtn.addEventListener('click', closeMetadataModal);
+  metaOverlay.addEventListener('click', (e) => {
+    if (e.target === metaOverlay) closeMetadataModal();
+  });
+
+  function closeMetadataModal() {
+    metaOverlay.classList.remove('open');
+    metaRouteIdx = null;
+  }
+
+  function openMetadataModal(idx) {
+    const route = routes[idx];
+    if (!route.firebaseDocId) return;
+    metaRouteIdx = idx;
+    metaTitle.textContent = route.routeName;
+
+    // Load current metadata from Firestore
+    metaBody.innerHTML = '<span style="color:#888;">Loading...</span>';
+    metaSaveBtn.style.display = 'none';
+    metaOverlay.classList.add('open');
+
+    db.collection('routes').doc(route.firebaseDocId).get()
+      .then(doc => {
+        const data = doc.data() || {};
+        const meta = data.metadata || {};
+        if (isAdmin()) {
+          renderMetadataEdit(meta);
+        } else {
+          renderMetadataView(meta);
+        }
+      })
+      .catch(err => {
+        metaBody.innerHTML = '<span style="color:#ff6b6b;">Failed to load metadata.</span>';
+        console.error('Metadata load error:', err);
+      });
+  }
+
+  function renderMetadataView(meta) {
+    let html = '';
+
+    html += '<label>Source Link</label>';
+    if (meta.sourceUrl) {
+      html += '<div class="meta-view-value"><a class="meta-link" href="' + escapeHtml(meta.sourceUrl) + '" target="_blank" rel="noopener">' + escapeHtml(meta.sourceUrl) + '</a></div>';
+    } else {
+      html += '<div class="meta-view-value empty">Not provided</div>';
+    }
+
+    html += '<label>Description</label>';
+    html += '<div class="meta-view-value' + (meta.description ? '' : ' empty') + '">' + (meta.description ? escapeHtml(meta.description) : 'No description') + '</div>';
+
+    html += '<label>Notes</label>';
+    html += '<div class="meta-view-value' + (meta.notes ? '' : ' empty') + '">' + (meta.notes ? escapeHtml(meta.notes) : 'No notes') + '</div>';
+
+    metaBody.innerHTML = html;
+    metaSaveBtn.style.display = 'none';
+  }
+
+  function renderMetadataEdit(meta) {
+    let html = '';
+
+    html += '<label for="meta-source-url">Source Link</label>';
+    html += '<input type="text" id="meta-source-url" placeholder="https://example.com/route-page" value="' + escapeAttr(meta.sourceUrl || '') + '">';
+
+    html += '<label for="meta-description">Description</label>';
+    html += '<textarea id="meta-description" placeholder="Brief description of this route">' + escapeHtml(meta.description || '') + '</textarea>';
+
+    html += '<label for="meta-notes">Notes</label>';
+    html += '<textarea id="meta-notes" placeholder="Any additional notes">' + escapeHtml(meta.notes || '') + '</textarea>';
+
+    metaBody.innerHTML = html;
+    metaSaveBtn.style.display = '';
+
+    // Re-bind save handler
+    metaSaveBtn.onclick = saveMetadata;
+  }
+
+  function saveMetadata() {
+    if (metaRouteIdx === null) return;
+    const route = routes[metaRouteIdx];
+    if (!route.firebaseDocId || !isAdmin()) return;
+
+    const metadata = {
+      sourceUrl: document.getElementById('meta-source-url').value.trim(),
+      description: document.getElementById('meta-description').value.trim(),
+      notes: document.getElementById('meta-notes').value.trim()
+    };
+
+    metaSaveBtn.disabled = true;
+    metaSaveBtn.textContent = 'Saving...';
+
+    db.collection('routes').doc(route.firebaseDocId).update({ metadata: metadata })
+      .then(() => {
+        metaSaveBtn.textContent = 'Saved!';
+        setTimeout(() => {
+          metaSaveBtn.textContent = 'Save';
+          metaSaveBtn.disabled = false;
+        }, 1500);
+      })
+      .catch(err => {
+        console.error('Metadata save error:', err);
+        metaSaveBtn.textContent = 'Save';
+        metaSaveBtn.disabled = false;
+        alert('Failed to save metadata: ' + err.message);
+      });
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function escapeAttr(str) {
+    return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
   // ── Upload area drag & drop + click ────────────────────────
