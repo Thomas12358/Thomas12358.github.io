@@ -25,4 +25,4 @@ const FIREBASE_CONFIG = {
 };
 
 // Set this to your Google account email to restrict who can upload
-const ADMIN_EMAIL = "your-email@gmail.com";
+const ADMIN_EMAIL = "tcharlton91@gmail.com";
