@@ -57,6 +57,16 @@ classes: wide
     border-color: #58a6ff;
   }
 
+  .roots-btn.active {
+    border-color: #58a6ff;
+    background: #1a1f2e;
+  }
+
+  .roots-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   #route-stats {
     background: #252a34;
     padding: 1em;
@@ -88,9 +98,69 @@ classes: wide
     border-radius: 50%;
     margin-right: 0.3em;
   }
+
+  /* Firebase admin UI */
+  #admin-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em;
+    margin-bottom: 1em;
+    align-items: center;
+    min-height: 2em;
+  }
+
+  #upload-area {
+    display: none;
+    border: 2px dashed #444;
+    border-radius: 6px;
+    padding: 1.5em;
+    margin-bottom: 1em;
+    text-align: center;
+    color: #888;
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  #upload-area.drag-over {
+    border-color: #58a6ff;
+    background: rgba(88, 166, 255, 0.05);
+    color: #58a6ff;
+  }
+
+  #upload-status {
+    font-size: 0.85em;
+    margin-top: 0.5em;
+    color: #58a6ff;
+  }
+
+  .delete-btn {
+    background: none;
+    border: none;
+    color: #ff6b6b;
+    cursor: pointer;
+    font-size: 0.8em;
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    margin-left: 0.5em;
+  }
+
+  .delete-btn:hover {
+    background: rgba(255, 107, 107, 0.15);
+  }
 </style>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+<!-- Admin bar: login/logout + upload -->
+<div id="admin-bar">
+  <button class="roots-btn" id="auth-btn" style="display:none;">Sign In</button>
+  <span id="auth-status" style="font-size:0.8em; color:#888;"></span>
+</div>
+
+<div id="upload-area">
+  <strong>Drop GPX files here</strong> or click to select<br>
+  <input type="file" id="firebase-file-input" accept=".gpx" multiple style="display:none;">
+  <div id="upload-status"></div>
+</div>
 
 <div class="roots-controls">
   <button class="roots-btn" id="add-gpx-btn" title="Load a GPX file from your device">+ Add GPX</button>
@@ -102,14 +172,23 @@ classes: wide
 <div id="map"></div>
 <div id="route-stats"></div>
 
+<!-- Firebase SDK (compat builds for straightforward inline usage) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+
+<!-- Firebase config (edit assets/js/firebase-config.js with your values) -->
+<script src="{{ '/assets/js/firebase-config.js' | relative_url }}"></script>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function() {
+  // ── Map & Route Logic (unchanged) ──────────────────────────
   const ROUTE_COLORS = ['#ff6b6b','#4ecdc4','#ffe66d','#a29bfe','#fd79a8','#00b894','#e17055','#0984e3','#6c5ce7','#fdcb6e'];
   const routes = [];
   let colorIdx = 0;
 
-  // Initialise map
   const map = L.map('map').setView([49.25, -123.1], 11);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -117,12 +196,10 @@ classes: wide
     maxZoom: 19
   }).addTo(map);
 
-  // GPX parser — plain XML, no extra dependencies
   function parseGPX(xmlString) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(xmlString, 'application/xml');
     const points = [];
-    // Support both <trkpt> (tracks) and <rtept> (routes)
     const trkpts = doc.querySelectorAll('trkpt, rtept');
     trkpts.forEach(pt => {
       const lat = parseFloat(pt.getAttribute('lat'));
@@ -133,18 +210,14 @@ classes: wide
         points.push({ lat, lon, ele });
       }
     });
-    // Try to get a name
     const nameEl = doc.querySelector('trk > name, rte > name, metadata > name');
     const name = nameEl ? nameEl.textContent : null;
     return { points, name };
   }
 
   function computeStats(points) {
-    let distance = 0;
-    let elevGain = 0;
-    let elevLoss = 0;
-    let minEle = Infinity;
-    let maxEle = -Infinity;
+    let distance = 0, elevGain = 0, elevLoss = 0;
+    let minEle = Infinity, maxEle = -Infinity;
 
     for (let i = 0; i < points.length; i++) {
       if (points[i].ele !== null) {
@@ -152,7 +225,6 @@ classes: wide
         maxEle = Math.max(maxEle, points[i].ele);
       }
       if (i === 0) continue;
-      // Haversine
       const R = 6371000;
       const dLat = (points[i].lat - points[i-1].lat) * Math.PI / 180;
       const dLon = (points[i].lon - points[i-1].lon) * Math.PI / 180;
@@ -178,7 +250,8 @@ classes: wide
     };
   }
 
-  function addRoute(gpxText, fileName) {
+  // Extended addRoute to optionally track Firebase doc ID for deletion
+  function addRoute(gpxText, fileName, firebaseDocId) {
     const { points, name } = parseGPX(gpxText);
     if (points.length === 0) { alert('No track points found in ' + fileName); return; }
 
@@ -187,13 +260,12 @@ classes: wide
     const latlngs = points.map(p => [p.lat, p.lon]);
     const polyline = L.polyline(latlngs, { color, weight: 4, opacity: 0.85 }).addTo(map);
 
-    // Start / end markers
     const startMarker = L.circleMarker(latlngs[0], { radius: 6, color, fillColor: '#fff', fillOpacity: 1, weight: 2 }).addTo(map);
     const endMarker = L.circleMarker(latlngs[latlngs.length - 1], { radius: 6, color, fillColor: color, fillOpacity: 1, weight: 2 }).addTo(map);
 
     const routeName = name || fileName.replace(/\.gpx$/i, '');
     const stats = computeStats(points);
-    const route = { routeName, color, polyline, startMarker, endMarker, stats, visible: true };
+    const route = { routeName, color, polyline, startMarker, endMarker, stats, visible: true, firebaseDocId: firebaseDocId || null };
     routes.push(route);
 
     polyline.bindPopup('<b>' + routeName + '</b><br>' + stats.distanceKm + ' km');
@@ -201,6 +273,16 @@ classes: wide
     endMarker.bindTooltip('End: ' + routeName);
 
     map.fitBounds(polyline.getBounds(), { padding: [30, 30] });
+    renderToggles();
+    renderStats();
+  }
+
+  function removeRouteFromMap(idx) {
+    const r = routes[idx];
+    map.removeLayer(r.polyline);
+    map.removeLayer(r.startMarker);
+    map.removeLayer(r.endMarker);
+    routes.splice(idx, 1);
     renderToggles();
     renderStats();
   }
@@ -220,6 +302,17 @@ classes: wide
       lbl.appendChild(cb);
       lbl.appendChild(dot);
       lbl.appendChild(document.createTextNode(r.routeName));
+
+      // Show delete button for Firebase routes when admin is logged in
+      if (r.firebaseDocId && currentUser) {
+        const del = document.createElement('button');
+        del.className = 'delete-btn';
+        del.textContent = '✕';
+        del.title = 'Delete from Firebase';
+        del.addEventListener('click', (e) => { e.preventDefault(); deleteFirebaseRoute(i); });
+        lbl.appendChild(del);
+      }
+
       container.appendChild(lbl);
     });
   }
@@ -271,10 +364,10 @@ classes: wide
             .then(txt => addRoute(txt, f));
         });
       })
-      .catch(() => { /* no bundled routes yet — that's fine */ });
+      .catch(() => { /* no bundled routes yet */ });
   }
 
-  // File input for local GPX
+  // Local file input
   const fileInput = document.getElementById('gpx-file-input');
   document.getElementById('add-gpx-btn').addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', (e) => {
@@ -293,7 +386,190 @@ classes: wide
     map.fitBounds(group.getBounds(), { padding: [30, 30] });
   });
 
+  // ── Firebase Integration ───────────────────────────────────
+  let currentUser = null;
+  let db = null;
+  let storage = null;
+  let firebaseReady = false;
+
+  function initFirebase() {
+    // Check if config is set (not placeholder values)
+    if (typeof FIREBASE_CONFIG === 'undefined' ||
+        !FIREBASE_CONFIG.apiKey ||
+        FIREBASE_CONFIG.apiKey === 'YOUR_API_KEY') {
+      console.log('Roots: Firebase not configured — running in local-only mode.');
+      document.getElementById('auth-btn').style.display = 'none';
+      return;
+    }
+
+    try {
+      firebase.initializeApp(FIREBASE_CONFIG);
+      db = firebase.firestore();
+      storage = firebase.storage();
+      firebaseReady = true;
+
+      const authBtn = document.getElementById('auth-btn');
+      authBtn.style.display = '';
+
+      firebase.auth().onAuthStateChanged(user => {
+        currentUser = user;
+        updateAuthUI();
+        if (firebaseReady) loadFirebaseRoutes();
+      });
+
+      authBtn.addEventListener('click', () => {
+        if (currentUser) {
+          firebase.auth().signOut();
+        } else {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          firebase.auth().signInWithPopup(provider).catch(err => {
+            console.error('Auth error:', err);
+            alert('Sign-in failed: ' + err.message);
+          });
+        }
+      });
+    } catch (err) {
+      console.error('Firebase init error:', err);
+    }
+  }
+
+  function isAdmin() {
+    return currentUser && typeof ADMIN_EMAIL !== 'undefined' && currentUser.email === ADMIN_EMAIL;
+  }
+
+  function updateAuthUI() {
+    const authBtn = document.getElementById('auth-btn');
+    const authStatus = document.getElementById('auth-status');
+    const uploadArea = document.getElementById('upload-area');
+
+    if (currentUser) {
+      authBtn.textContent = 'Sign Out';
+      if (isAdmin()) {
+        authStatus.textContent = 'Signed in as ' + currentUser.email + ' (admin)';
+        uploadArea.style.display = 'block';
+      } else {
+        authStatus.textContent = 'Signed in as ' + currentUser.email;
+        uploadArea.style.display = 'none';
+      }
+    } else {
+      authBtn.textContent = 'Sign In';
+      authStatus.textContent = '';
+      uploadArea.style.display = 'none';
+    }
+    renderToggles(); // refresh delete buttons
+  }
+
+  // ── Load routes from Firestore ─────────────────────────────
+  function loadFirebaseRoutes() {
+    if (!firebaseReady) return;
+
+    db.collection('routes').orderBy('uploadedAt', 'desc').get()
+      .then(snapshot => {
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          // Download the GPX file from Storage
+          storage.ref(data.storagePath).getDownloadURL()
+            .then(url => fetch(url))
+            .then(res => res.text())
+            .then(gpxText => addRoute(gpxText, data.fileName, doc.id))
+            .catch(err => console.error('Error loading route ' + data.fileName + ':', err));
+        });
+      })
+      .catch(err => console.error('Firestore read error:', err));
+  }
+
+  // ── Upload GPX to Firebase ─────────────────────────────────
+  function uploadToFirebase(file) {
+    if (!isAdmin()) return;
+
+    const statusEl = document.getElementById('upload-status');
+    statusEl.textContent = 'Uploading ' + file.name + '...';
+
+    const storagePath = 'gpx/' + Date.now() + '_' + file.name;
+    const storageRef = storage.ref(storagePath);
+
+    storageRef.put(file)
+      .then(() => {
+        // Save metadata to Firestore
+        return db.collection('routes').add({
+          fileName: file.name,
+          storagePath: storagePath,
+          uploadedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      })
+      .then(docRef => {
+        statusEl.textContent = 'Uploaded ' + file.name + ' ✓';
+        // Read the file and add to map immediately
+        const reader = new FileReader();
+        reader.onload = (ev) => addRoute(ev.target.result, file.name, docRef.id);
+        reader.readAsText(file);
+        setTimeout(() => { statusEl.textContent = ''; }, 3000);
+      })
+      .catch(err => {
+        console.error('Upload error:', err);
+        statusEl.textContent = 'Upload failed: ' + err.message;
+      });
+  }
+
+  // ── Delete route from Firebase ─────────────────────────────
+  function deleteFirebaseRoute(routeIdx) {
+    const route = routes[routeIdx];
+    if (!route.firebaseDocId || !isAdmin()) return;
+    if (!confirm('Delete "' + route.routeName + '" from Firebase?')) return;
+
+    // Get the storage path from Firestore, then delete both
+    db.collection('routes').doc(route.firebaseDocId).get()
+      .then(doc => {
+        const data = doc.data();
+        // Delete from Storage
+        return storage.ref(data.storagePath).delete().then(() => {
+          // Delete Firestore doc
+          return db.collection('routes').doc(route.firebaseDocId).delete();
+        });
+      })
+      .then(() => {
+        removeRouteFromMap(routeIdx);
+      })
+      .catch(err => {
+        console.error('Delete error:', err);
+        alert('Delete failed: ' + err.message);
+      });
+  }
+
+  // ── Upload area drag & drop + click ────────────────────────
+  const uploadArea = document.getElementById('upload-area');
+  const firebaseFileInput = document.getElementById('firebase-file-input');
+
+  uploadArea.addEventListener('click', () => firebaseFileInput.click());
+
+  firebaseFileInput.addEventListener('change', (e) => {
+    Array.from(e.target.files).forEach(file => uploadToFirebase(file));
+    firebaseFileInput.value = '';
+  });
+
+  uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadArea.classList.add('drag-over');
+  });
+
+  uploadArea.addEventListener('dragleave', () => {
+    uploadArea.classList.remove('drag-over');
+  });
+
+  uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('drag-over');
+    const files = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.gpx'));
+    if (files.length === 0) {
+      alert('Please drop .gpx files only.');
+      return;
+    }
+    files.forEach(file => uploadToFirebase(file));
+  });
+
+  // ── Initialise ─────────────────────────────────────────────
   loadBundledRoutes();
+  initFirebase();
 })();
 </script>
 
@@ -301,4 +577,4 @@ classes: wide
 
 Drop your `.gpx` files onto the **+ Add GPX** button to visualise bike routes on the map. Toggle routes on/off with the checkboxes and view distance & elevation stats below the map.
 
-To permanently add routes to this page, place `.gpx` files in `assets/gpx/` and list them in `assets/gpx/routes.json`.
+**Firebase mode:** Sign in with Google to upload GPX files directly to Firebase Storage. Uploaded routes are persisted and will load automatically for all visitors. See `assets/js/firebase-config.js` to connect your Firebase project.
