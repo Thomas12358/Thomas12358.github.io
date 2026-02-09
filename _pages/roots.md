@@ -375,7 +375,7 @@ classes: wide
   }
 
   // Extended addRoute to optionally track Firebase doc ID for deletion
-  function addRoute(gpxText, fileName, firebaseDocId) {
+  function addRoute(gpxText, fileName, firebaseDocId, metadata) {
     const { points, name } = parseGPX(gpxText);
     if (points.length === 0) { alert('No track points found in ' + fileName); return; }
 
@@ -389,10 +389,18 @@ classes: wide
 
     const routeName = name || fileName.replace(/\.gpx$/i, '');
     const stats = computeStats(points);
-    const route = { routeName, color, polyline, startMarker, endMarker, stats, visible: true, firebaseDocId: firebaseDocId || null };
+    const meta = metadata || {};
+    const route = { routeName, color, polyline, startMarker, endMarker, stats, visible: true, firebaseDocId: firebaseDocId || null, metadata: meta };
     routes.push(route);
 
-    polyline.bindPopup('<b>' + routeName + '</b><br>' + stats.distanceKm + ' km');
+    let popupHtml = '<b>' + escapeHtml(routeName) + '</b><br>' + stats.distanceKm + ' km';
+    if (meta.description) {
+      popupHtml += '<br><span style="color:#ccc;font-size:0.92em;">' + escapeHtml(meta.description) + '</span>';
+    }
+    if (meta.sourceUrl) {
+      popupHtml += '<br><a href="' + escapeAttr(meta.sourceUrl) + '" target="_blank" rel="noopener" style="color:#4fc3f7;">Source</a>';
+    }
+    polyline.bindPopup(popupHtml);
     startMarker.bindTooltip('Start: ' + routeName);
     endMarker.bindTooltip('End: ' + routeName);
 
@@ -604,6 +612,16 @@ classes: wide
     }).addTo(map);
     
     let popupContent = '<b>' + escapeHtml(pointData.name) + '</b>';
+    if (pointData.metadata) {
+      const desc = pointData.metadata.description || pointData.metadata.Description || '';
+      if (desc) {
+        popupContent += '<br><span style="color:#ccc;font-size:0.92em;">' + escapeHtml(desc) + '</span>';
+      }
+      const notes = pointData.metadata.notes || pointData.metadata.Notes || '';
+      if (notes) {
+        popupContent += '<br><span style="color:#aaa;font-size:0.88em;font-style:italic;">' + escapeHtml(notes) + '</span>';
+      }
+    }
     if (pointData.url) {
       popupContent += '<br><a href="' + escapeAttr(pointData.url) + '" target="_blank" rel="noopener" aria-label="View details for ' + escapeAttr(pointData.name) + '">View Details</a>';
     }
@@ -865,9 +883,10 @@ classes: wide
           if (loadedFirebaseIds.has(doc.id)) return;
           loadedFirebaseIds.add(doc.id);
           const data = doc.data();
+          const meta = data.metadata || {};
           if (data.gpxContent) {
             // Read GPX directly from Firestore (no CORS issues)
-            addRoute(data.gpxContent, data.fileName, doc.id);
+            addRoute(data.gpxContent, data.fileName, doc.id, meta);
           } else {
             // Fallback for old docs without gpxContent: fetch from Storage
             storage.ref(data.storagePath).getDownloadURL()
@@ -877,7 +896,7 @@ classes: wide
                 return res.text();
               })
               .then(gpxText => {
-                addRoute(gpxText, data.fileName, doc.id);
+                addRoute(gpxText, data.fileName, doc.id, meta);
                 // Backfill gpxContent so future loads avoid CORS
                 doc.ref.update({ gpxContent: gpxText }).catch(() => {});
               })
