@@ -12,13 +12,25 @@ Your CSV file must have:
 
 All other columns will be stored as metadata and displayed in the info modal.
 
+### Type Column (for custom map icons)
+
+If your CSV includes a **Type** column, each point will get a distinct icon on the map based on its type. Supported types:
+
+| Type | Icon | Color |
+|------|------|-------|
+| Onsen | Hot spring (steam) | Red |
+| Campsite | Tent/triangle | Green |
+| Roadside Station | Building | Blue |
+| Must See | Star | Yellow |
+| *(other/empty)* | Circle dot | Grey |
+
 ## Example CSV
 
 ```csv
-name,latitude,longitude,url,type,rating,notes
-Hakone Yuryo,35.2328,139.0573,https://example.com/hakone,outdoor,4.5,Beautiful mountain onsen
-Kusatsu Onsen,36.6228,138.5986,https://example.com/kusatsu,mixed,5.0,Famous hot spring town
-Noboribetsu,42.5033,141.1556,https://example.com/noboribetsu,indoor,4.8,Volcanic hot springs
+name,latitude,longitude,url,Type,rating,notes
+Hakone Yuryo,35.2328,139.0573,https://example.com/hakone,Onsen,4.5,Beautiful mountain onsen
+Kusatsu Onsen,36.6228,138.5986,https://example.com/kusatsu,Onsen,5.0,Famous hot spring town
+Fumotoppara,35.3845,138.5753,https://example.com/fumotoppara,Campsite,4.7,Iconic campsite with Mt Fuji views
 ```
 
 ## Features
