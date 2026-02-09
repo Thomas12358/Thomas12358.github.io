@@ -745,7 +745,7 @@ classes: wide
     
     if (data.url) {
       html += '<label>Source Link</label>';
-      html += '<div class="meta-view-value"><a class="meta-link" href="' + escapeHtml(data.url) + '" target="_blank" rel="noopener">' + escapeHtml(data.url) + '</a></div>';
+      html += '<div class="meta-view-value"><a class="meta-link" href="' + escapeAttr(data.url) + '" target="_blank" rel="noopener">' + escapeHtml(data.url) + '</a></div>';
     }
     
     html += '<label>Location</label>';
@@ -1222,7 +1222,7 @@ classes: wide
 
 ---
 
-Drop your `.gpx` files onto the **+ Add GPX** button to visualise bike routes on the map, or use **+ Add CSV Points** to add individual GPS points from a CSV file. Toggle routes and points on/off with the checkboxes and view distance & elevation stats below the map.
+Drop your `.gpx` files onto the **+ Add GPX** button to visualize bike routes on the map, or use **+ Add CSV Points** to add individual GPS points from a CSV file. Toggle routes and points on/off with the checkboxes and view distance & elevation stats below the map.
 
 **CSV Format:** Your CSV file should have columns for `name`, `latitude`, `longitude`, and optionally `url` (for a link to more details). All other columns will be stored as metadata and displayed when you click the info button.
 
