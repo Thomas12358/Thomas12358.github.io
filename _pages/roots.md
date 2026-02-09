@@ -265,15 +265,18 @@ classes: wide
 </div>
 
 <div id="upload-area">
-  <strong>Drop GPX files here</strong> or click to select<br>
-  <input type="file" id="firebase-file-input" accept=".gpx" multiple style="display:none;">
+  <strong>Drop GPX or CSV files here</strong> or click to select<br>
+  <input type="file" id="firebase-file-input" accept=".gpx,.csv" multiple style="display:none;">
   <div id="upload-status"></div>
 </div>
 
 <div class="roots-controls">
   <button class="roots-btn" id="add-gpx-btn" title="Load a GPX file from your device">+ Add GPX</button>
   <input type="file" id="gpx-file-input" accept=".gpx" multiple style="display:none;">
+  <button class="roots-btn" id="add-csv-btn" title="Load a CSV file with GPS points">+ Add CSV Points</button>
+  <input type="file" id="csv-file-input" accept=".csv" multiple style="display:none;">
   <span id="route-toggles"></span>
+  <span id="point-toggles"></span>
   <button class="roots-btn" id="fit-bounds-btn" title="Zoom to fit all routes">Fit All</button>
 </div>
 
@@ -307,6 +310,7 @@ classes: wide
   // ── Map & Route Logic (unchanged) ──────────────────────────
   const ROUTE_COLORS = ['#ff6b6b','#4ecdc4','#ffe66d','#a29bfe','#fd79a8','#00b894','#e17055','#0984e3','#6c5ce7','#fdcb6e'];
   const routes = [];
+  const points = []; // Array for CSV points
   let colorIdx = 0;
 
   const map = L.map('map').setView([49.25, -123.1], 11);
@@ -516,12 +520,240 @@ classes: wide
     map.fitBounds(group.getBounds(), { padding: [30, 30] });
   });
 
+  // ── CSV Point Logic ─────────────────────────────────────────
+  function parseCSV(csvText) {
+    const lines = csvText.trim().split('\n');
+    if (lines.length < 2) return [];
+    
+    const headers = lines[0].split(',').map(h => h.trim());
+    const nameIdx = headers.findIndex(h => h.toLowerCase() === 'name');
+    const latIdx = headers.findIndex(h => h.toLowerCase() === 'latitude' || h.toLowerCase() === 'lat');
+    const lonIdx = headers.findIndex(h => h.toLowerCase() === 'longitude' || h.toLowerCase() === 'lon' || h.toLowerCase() === 'lng');
+    const urlIdx = headers.findIndex(h => h.toLowerCase() === 'url' || h.toLowerCase() === 'link' || h.toLowerCase() === 'page');
+    
+    if (latIdx === -1 || lonIdx === -1) {
+      alert('CSV must have latitude and longitude columns');
+      return [];
+    }
+    
+    const parsedPoints = [];
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',').map(v => v.trim());
+      if (values.length < 2) continue;
+      
+      const lat = parseFloat(values[latIdx]);
+      const lon = parseFloat(values[lonIdx]);
+      if (isNaN(lat) || isNaN(lon)) continue;
+      
+      const metadata = {};
+      headers.forEach((header, idx) => {
+        if (idx !== latIdx && idx !== lonIdx && values[idx]) {
+          metadata[header] = values[idx];
+        }
+      });
+      
+      parsedPoints.push({
+        name: nameIdx !== -1 ? values[nameIdx] : `Point ${i}`,
+        lat,
+        lon,
+        url: urlIdx !== -1 ? values[urlIdx] : null,
+        metadata
+      });
+    }
+    
+    return parsedPoints;
+  }
+
+  function addPoint(pointData, fileName, firebaseDocId) {
+    const marker = L.marker([pointData.lat, pointData.lon], {
+      icon: L.icon({
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowSize: [41, 41]
+      })
+    }).addTo(map);
+    
+    let popupContent = '<b>' + escapeHtml(pointData.name) + '</b>';
+    if (pointData.url) {
+      popupContent += '<br><a href="' + escapeAttr(pointData.url) + '" target="_blank" rel="noopener">View Details</a>';
+    }
+    marker.bindPopup(popupContent);
+    
+    const point = {
+      name: pointData.name,
+      lat: pointData.lat,
+      lon: pointData.lon,
+      url: pointData.url,
+      metadata: pointData.metadata,
+      marker,
+      visible: true,
+      fileName,
+      firebaseDocId: firebaseDocId || null
+    };
+    points.push(point);
+    
+    map.setView([pointData.lat, pointData.lon], 11);
+    renderPointToggles();
+  }
+
+  function addPointsFromCSV(csvText, fileName, firebaseDocId) {
+    const parsedPoints = parseCSV(csvText);
+    if (parsedPoints.length === 0) {
+      alert('No valid points found in ' + fileName);
+      return;
+    }
+    
+    parsedPoints.forEach(p => addPoint(p, fileName, firebaseDocId));
+    
+    // Fit map to show all points
+    if (parsedPoints.length > 0) {
+      const group = L.featureGroup(points.map(p => p.marker));
+      map.fitBounds(group.getBounds(), { padding: [30, 30] });
+    }
+  }
+
+  function removePointFromMap(idx) {
+    const p = points[idx];
+    map.removeLayer(p.marker);
+    points.splice(idx, 1);
+    renderPointToggles();
+  }
+
+  function renderPointToggles() {
+    const container = document.getElementById('point-toggles');
+    container.innerHTML = '';
+    
+    // Group points by fileName
+    const groupedPoints = {};
+    points.forEach((p, idx) => {
+      const key = p.fileName || 'Unnamed';
+      if (!groupedPoints[key]) groupedPoints[key] = [];
+      groupedPoints[key].push({ point: p, idx });
+    });
+    
+    Object.entries(groupedPoints).forEach(([fileName, pointGroup]) => {
+      const lbl = document.createElement('label');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = pointGroup[0].point.visible;
+      cb.addEventListener('change', () => togglePointGroup(fileName));
+      
+      lbl.appendChild(cb);
+      lbl.appendChild(document.createTextNode('📍 ' + fileName + ' (' + pointGroup.length + ')'));
+      
+      // Show info button for Firebase points
+      if (pointGroup[0].point.firebaseDocId) {
+        const info = document.createElement('button');
+        info.className = 'info-btn';
+        info.textContent = 'ℹ';
+        info.title = 'Point group info';
+        info.addEventListener('click', (e) => { 
+          e.preventDefault(); 
+          e.stopPropagation(); 
+          openPointMetadataModal(pointGroup[0].idx); 
+        });
+        lbl.appendChild(info);
+      }
+      
+      // Show delete button for Firebase points when admin is logged in
+      if (pointGroup[0].point.firebaseDocId && isAdmin()) {
+        const del = document.createElement('button');
+        del.className = 'delete-btn';
+        del.textContent = '✕';
+        del.title = 'Delete from Firebase';
+        del.addEventListener('click', (e) => { 
+          e.preventDefault(); 
+          deleteFirebasePoints(fileName); 
+        });
+        lbl.appendChild(del);
+      }
+      
+      container.appendChild(lbl);
+    });
+  }
+
+  function togglePointGroup(fileName) {
+    points.forEach(p => {
+      if (p.fileName === fileName) {
+        p.visible = !p.visible;
+        if (p.visible) {
+          p.marker.addTo(map);
+        } else {
+          map.removeLayer(p.marker);
+        }
+      }
+    });
+  }
+
+  function openPointMetadataModal(idx) {
+    const point = points[idx];
+    if (!point.firebaseDocId) return;
+    metaRouteIdx = null; // Not a route
+    metaPointIdx = idx;
+    metaTitle.textContent = point.name;
+    
+    metaBody.innerHTML = '<span style="color:#888;">Loading...</span>';
+    metaSaveBtn.style.display = 'none';
+    metaOverlay.classList.add('open');
+    
+    db.collection('points').doc(point.firebaseDocId).get()
+      .then(doc => {
+        const data = doc.data() || {};
+        renderPointMetadataView(data);
+      })
+      .catch(err => {
+        metaBody.innerHTML = '<span style="color:#ff6b6b;">Failed to load metadata.</span>';
+        console.error('Metadata load error:', err);
+      });
+  }
+
+  function renderPointMetadataView(data) {
+    let html = '';
+    
+    if (data.url) {
+      html += '<label>Source Link</label>';
+      html += '<div class="meta-view-value"><a class="meta-link" href="' + escapeHtml(data.url) + '" target="_blank" rel="noopener">' + escapeHtml(data.url) + '</a></div>';
+    }
+    
+    html += '<label>Location</label>';
+    html += '<div class="meta-view-value">Lat: ' + data.lat + ', Lon: ' + data.lon + '</div>';
+    
+    if (data.metadata) {
+      html += '<label>Additional Data</label>';
+      Object.entries(data.metadata).forEach(([key, value]) => {
+        if (key !== 'name' && key !== 'url') {
+          html += '<div class="meta-view-value"><strong>' + escapeHtml(key) + ':</strong> ' + escapeHtml(value) + '</div>';
+        }
+      });
+    }
+    
+    metaBody.innerHTML = html;
+    metaSaveBtn.style.display = 'none';
+  }
+
+  // Local CSV file input
+  const csvFileInput = document.getElementById('csv-file-input');
+  document.getElementById('add-csv-btn').addEventListener('click', () => csvFileInput.click());
+  csvFileInput.addEventListener('change', (e) => {
+    Array.from(e.target.files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (ev) => addPointsFromCSV(ev.target.result, file.name);
+      reader.readAsText(file);
+    });
+    csvFileInput.value = '';
+  });
+
   // ── Firebase Integration ───────────────────────────────────
   let currentUser = null;
   let db = null;
   let storage = null;
   let firebaseReady = false;
   const loadedFirebaseIds = new Set();
+  const loadedFirebasePointIds = new Set();
+  let metaPointIdx = null; // Track point index for metadata modal
 
   function initFirebase() {
     // Check if config is set (not placeholder values)
@@ -546,10 +778,12 @@ classes: wide
         currentUser = user;
         updateAuthUI();
         loadFirebaseRoutes();
+        loadFirebasePoints();
       });
 
-      // Load routes immediately — don't wait for auth state
+      // Load routes and points immediately — don't wait for auth state
       loadFirebaseRoutes();
+      loadFirebasePoints();
 
       authBtn.addEventListener('click', () => {
         if (currentUser) {
@@ -626,6 +860,28 @@ classes: wide
       .catch(err => console.error('Firestore read error:', err));
   }
 
+  // ── Load points from Firestore ──────────────────────────────
+  function loadFirebasePoints() {
+    if (!firebaseReady) return;
+
+    db.collection('points').orderBy('uploadedAt', 'desc').get()
+      .then(snapshot => {
+        snapshot.forEach(doc => {
+          if (loadedFirebasePointIds.has(doc.id)) return;
+          loadedFirebasePointIds.add(doc.id);
+          const data = doc.data();
+          addPoint({
+            name: data.name,
+            lat: data.lat,
+            lon: data.lon,
+            url: data.url,
+            metadata: data.metadata || {}
+          }, data.fileName, doc.id);
+        });
+      })
+      .catch(err => console.error('Firestore points read error:', err));
+  }
+
   // ── Upload GPX to Firebase ─────────────────────────────────
   function uploadToFirebase(file) {
     if (!isAdmin()) return;
@@ -633,26 +889,32 @@ classes: wide
     const statusEl = document.getElementById('upload-status');
     statusEl.textContent = 'Uploading ' + file.name + '...';
 
-    const storagePath = 'gpx/' + Date.now() + '_' + file.name;
+    const isCSV = file.name.toLowerCase().endsWith('.csv');
+    const storagePath = (isCSV ? 'csv/' : 'gpx/') + Date.now() + '_' + file.name;
     const storageRef = storage.ref(storagePath);
 
     // Read file text first, then upload both to Storage and Firestore
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const gpxText = ev.target.result;
+      const fileText = ev.target.result;
       storageRef.put(file)
         .then(() => {
-          // Save metadata + GPX content to Firestore (avoids CORS on Storage fetch)
-          return db.collection('routes').add({
-            fileName: file.name,
-            storagePath: storagePath,
-            gpxContent: gpxText,
-            uploadedAt: firebase.firestore.FieldValue.serverTimestamp()
-          });
+          if (isCSV) {
+            return uploadCSVToFirestore(file.name, storagePath, fileText);
+          } else {
+            // Save GPX metadata + content to Firestore (avoids CORS on Storage fetch)
+            return db.collection('routes').add({
+              fileName: file.name,
+              storagePath: storagePath,
+              gpxContent: fileText,
+              uploadedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }).then(docRef => {
+              addRoute(fileText, file.name, docRef.id);
+            });
+          }
         })
-        .then(docRef => {
+        .then(() => {
           statusEl.textContent = 'Uploaded ' + file.name + ' ✓';
-          addRoute(gpxText, file.name, docRef.id);
           setTimeout(() => { statusEl.textContent = ''; }, 3000);
         })
         .catch(err => {
@@ -661,6 +923,36 @@ classes: wide
         });
     };
     reader.readAsText(file);
+  }
+
+  function uploadCSVToFirestore(fileName, storagePath, csvText) {
+    const parsedPoints = parseCSV(csvText);
+    if (parsedPoints.length === 0) {
+      throw new Error('No valid points found in CSV');
+    }
+
+    // Create a batch write for all points
+    const batch = db.batch();
+    const promises = [];
+    
+    parsedPoints.forEach(p => {
+      const docRef = db.collection('points').doc();
+      batch.set(docRef, {
+        name: p.name,
+        lat: p.lat,
+        lon: p.lon,
+        url: p.url,
+        metadata: p.metadata,
+        fileName: fileName,
+        storagePath: storagePath,
+        uploadedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      promises.push(docRef.id);
+    });
+
+    return batch.commit().then(() => {
+      addPointsFromCSV(csvText, fileName, promises[0]);
+    });
   }
 
   // ── Delete route from Firebase ─────────────────────────────
@@ -688,6 +980,52 @@ classes: wide
       });
   }
 
+  // ── Delete points from Firebase ────────────────────────────
+  function deleteFirebasePoints(fileName) {
+    if (!isAdmin()) return;
+    if (!confirm('Delete all points from "' + fileName + '" from Firebase?')) return;
+
+    const pointsToDelete = points.filter(p => p.fileName === fileName && p.firebaseDocId);
+    if (pointsToDelete.length === 0) return;
+
+    const batch = db.batch();
+    let storagePath = null;
+    
+    pointsToDelete.forEach(p => {
+      const docRef = db.collection('points').doc(p.firebaseDocId);
+      batch.delete(docRef);
+    });
+
+    // Get storage path from first point to delete the CSV file
+    db.collection('points').doc(pointsToDelete[0].firebaseDocId).get()
+      .then(doc => {
+        const data = doc.data();
+        storagePath = data.storagePath;
+        return batch.commit();
+      })
+      .then(() => {
+        // Delete CSV from Storage
+        if (storagePath) {
+          return storage.ref(storagePath).delete();
+        }
+      })
+      .then(() => {
+        // Remove points from map
+        const indicesToRemove = [];
+        points.forEach((p, idx) => {
+          if (p.fileName === fileName) {
+            indicesToRemove.push(idx);
+          }
+        });
+        // Remove in reverse order to maintain indices
+        indicesToRemove.reverse().forEach(idx => removePointFromMap(idx));
+      })
+      .catch(err => {
+        console.error('Delete error:', err);
+        alert('Delete failed: ' + err.message);
+      });
+  }
+
   // ── Metadata modal ──────────────────────────────────────────
   let metaRouteIdx = null;
 
@@ -705,6 +1043,7 @@ classes: wide
   function closeMetadataModal() {
     metaOverlay.classList.remove('open');
     metaRouteIdx = null;
+    metaPointIdx = null;
   }
 
   function openMetadataModal(idx) {
@@ -836,9 +1175,12 @@ classes: wide
   uploadArea.addEventListener('drop', (e) => {
     e.preventDefault();
     uploadArea.classList.remove('drag-over');
-    const files = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.gpx'));
+    const files = Array.from(e.dataTransfer.files).filter(f => {
+      const name = f.name.toLowerCase();
+      return name.endsWith('.gpx') || name.endsWith('.csv');
+    });
     if (files.length === 0) {
-      alert('Please drop .gpx files only.');
+      alert('Please drop .gpx or .csv files only.');
       return;
     }
     files.forEach(file => uploadToFirebase(file));
@@ -852,6 +1194,8 @@ classes: wide
 
 ---
 
-Drop your `.gpx` files onto the **+ Add GPX** button to visualise bike routes on the map. Toggle routes on/off with the checkboxes and view distance & elevation stats below the map.
+Drop your `.gpx` files onto the **+ Add GPX** button to visualise bike routes on the map, or use **+ Add CSV Points** to add individual GPS points from a CSV file. Toggle routes and points on/off with the checkboxes and view distance & elevation stats below the map.
 
-**Firebase mode:** Sign in with Google to upload GPX files directly to Firebase Storage. Uploaded routes are persisted and will load automatically for all visitors. See `assets/js/firebase-config.js` to connect your Firebase project.
+**CSV Format:** Your CSV file should have columns for `name`, `latitude`, `longitude`, and optionally `url` (for a link to more details). All other columns will be stored as metadata and displayed when you click the info button.
+
+**Firebase mode:** Sign in with Google to upload GPX and CSV files directly to Firebase Storage. Uploaded routes and points are persisted and will load automatically for all visitors. See `assets/js/firebase-config.js` to connect your Firebase project.
