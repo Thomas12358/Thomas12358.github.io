@@ -667,10 +667,10 @@ classes: wide
       });
       
       parsedPoints.push({
-        name: nameIdx !== -1 ? values[nameIdx] : `Point ${i}`,
+        name: nameIdx !== -1 && values[nameIdx] ? values[nameIdx] : `Point ${i}`,
         lat,
         lon,
-        url: urlIdx !== -1 ? values[urlIdx] : null,
+        url: urlIdx !== -1 && values[urlIdx] ? values[urlIdx] : null,
         metadata
       });
     }
