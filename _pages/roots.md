@@ -259,9 +259,52 @@ classes: wide
     color: #666;
     font-style: italic;
   }
+
+  /* Marker cluster custom styling */
+  .marker-cluster-small {
+    background-color: rgba(88, 166, 255, 0.6);
+  }
+  .marker-cluster-small div {
+    background-color: rgba(88, 166, 255, 0.8);
+  }
+
+  .marker-cluster-medium {
+    background-color: rgba(241, 196, 15, 0.6);
+  }
+  .marker-cluster-medium div {
+    background-color: rgba(241, 196, 15, 0.8);
+  }
+
+  .marker-cluster-large {
+    background-color: rgba(231, 76, 60, 0.6);
+  }
+  .marker-cluster-large div {
+    background-color: rgba(231, 76, 60, 0.8);
+  }
+
+  .marker-cluster {
+    background-clip: padding-box;
+    border-radius: 20px;
+  }
+  .marker-cluster div {
+    width: 30px;
+    height: 30px;
+    margin-left: 5px;
+    margin-top: 5px;
+    text-align: center;
+    border-radius: 15px;
+    font: 12px "Helvetica Neue", Arial, Helvetica, sans-serif;
+    font-weight: bold;
+  }
+  .marker-cluster span {
+    line-height: 30px;
+    color: #fff;
+  }
 </style>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
 
 <!-- Admin bar: login/logout + upload -->
 <div id="admin-bar">
@@ -336,6 +379,7 @@ classes: wide
 <script src="{{ '/assets/js/firebase-config.js' | relative_url }}"></script>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script>
 (function() {
   // ── Map & Route Logic (unchanged) ──────────────────────────
@@ -398,6 +442,34 @@ classes: wide
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxZoom: 19
   }).addTo(map);
+
+  // Create marker cluster group for points
+  const markerClusterGroup = L.markerClusterGroup({
+    maxClusterRadius: 60,
+    spiderfyOnMaxZoom: true,
+    showCoverageOnHover: false,
+    zoomToBoundsOnClick: true,
+    iconCreateFunction: function(cluster) {
+      const count = cluster.getChildCount();
+      let size = 'small';
+      let clusterClass = 'marker-cluster-small';
+
+      if (count > 100) {
+        size = 'large';
+        clusterClass = 'marker-cluster-large';
+      } else if (count > 10) {
+        size = 'medium';
+        clusterClass = 'marker-cluster-medium';
+      }
+
+      return L.divIcon({
+        html: '<div><span>' + count + '</span></div>',
+        className: 'marker-cluster ' + clusterClass,
+        iconSize: L.point(40, 40)
+      });
+    }
+  });
+  markerClusterGroup.addTo(map);
 
   function parseGPX(xmlString) {
     const parser = new DOMParser();
@@ -602,8 +674,15 @@ classes: wide
 
   document.getElementById('fit-bounds-btn').addEventListener('click', () => {
     const visible = routes.filter(r => r.visible);
-    if (visible.length === 0) return;
-    const group = L.featureGroup(visible.map(r => r.polyline));
+    const layers = visible.map(r => r.polyline);
+
+    // Include marker cluster group if it has any layers
+    if (markerClusterGroup.getLayers().length > 0) {
+      layers.push(markerClusterGroup);
+    }
+
+    if (layers.length === 0) return;
+    const group = L.featureGroup(layers);
     map.fitBounds(group.getBounds(), { padding: [30, 30] });
   });
 
@@ -682,7 +761,9 @@ classes: wide
     const pointType = pointData.metadata ? (pointData.metadata.Type || pointData.metadata.type || null) : null;
     const marker = L.marker([pointData.lat, pointData.lon], {
       icon: getPointIcon(pointType)
-    }).addTo(map);
+    });
+    // Add to cluster group instead of directly to map
+    markerClusterGroup.addLayer(marker);
     
     let popupContent = '<b>' + escapeHtml(pointData.name) + '</b>';
     if (pointData.metadata) {
@@ -722,23 +803,21 @@ classes: wide
       alert('No valid points found in ' + fileName);
       return;
     }
-    
+
     parsedPoints.forEach((p, idx) => {
       const docId = docIdMap ? docIdMap[idx] : null;
       addPoint(p, fileName, docId);
     });
-    
-    // Fit map to show newly added points
-    if (parsedPoints.length > 0) {
-      const newMarkers = points.slice(-parsedPoints.length).map(p => p.marker);
-      const group = L.featureGroup(newMarkers);
-      map.fitBounds(group.getBounds(), { padding: [30, 30] });
+
+    // Fit map to show newly added points using cluster group
+    if (parsedPoints.length > 0 && markerClusterGroup.getLayers().length > 0) {
+      map.fitBounds(markerClusterGroup.getBounds(), { padding: [30, 30] });
     }
   }
 
   function removePointFromMap(idx) {
     const p = points[idx];
-    map.removeLayer(p.marker);
+    markerClusterGroup.removeLayer(p.marker);
     points.splice(idx, 1);
     renderPointToggles();
   }
@@ -801,9 +880,9 @@ classes: wide
       if (p.fileName === fileName) {
         p.visible = !p.visible;
         if (p.visible) {
-          p.marker.addTo(map);
+          markerClusterGroup.addLayer(p.marker);
         } else {
-          map.removeLayer(p.marker);
+          markerClusterGroup.removeLayer(p.marker);
         }
       }
     });
