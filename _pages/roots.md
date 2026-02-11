@@ -369,11 +369,9 @@ classes: wide
 <div id="map"></div>
 <div id="route-stats"></div>
 
-<!-- Firebase SDK (compat builds for straightforward inline usage) -->
+<!-- Firebase SDK — only app + firestore loaded upfront (auth & storage lazy-loaded on sign-in) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 
 <!-- Firebase config (edit assets/js/firebase-config.js with your values) -->
 <script src="{{ '/assets/js/firebase-config.js' | relative_url }}"></script>
@@ -757,14 +755,19 @@ classes: wide
     return parsedPoints;
   }
 
-  function addPoint(pointData, fileName, firebaseDocId) {
+  // Debounced toggle rendering — avoids rebuilding DOM hundreds of times during bulk loads
+  let _toggleTimer = null;
+  function scheduleRenderPointToggles() {
+    if (_toggleTimer) clearTimeout(_toggleTimer);
+    _toggleTimer = setTimeout(renderPointToggles, 50);
+  }
+
+  function createPointMarker(pointData) {
     const pointType = pointData.metadata ? (pointData.metadata.Type || pointData.metadata.type || null) : null;
     const marker = L.marker([pointData.lat, pointData.lon], {
       icon: getPointIcon(pointType)
     });
-    // Add to cluster group instead of directly to map
-    markerClusterGroup.addLayer(marker);
-    
+
     let popupContent = '<b>' + escapeHtml(pointData.name) + '</b>';
     if (pointData.metadata) {
       const desc = pointData.metadata.description || pointData.metadata.Description || '';
@@ -780,7 +783,14 @@ classes: wide
       popupContent += '<br><a href="' + escapeAttr(pointData.url) + '" target="_blank" rel="noopener" aria-label="View details for ' + escapeAttr(pointData.name) + '">View Details</a>';
     }
     marker.bindPopup(popupContent);
-    
+    return marker;
+  }
+
+  function addPoint(pointData, fileName, firebaseDocId) {
+    const marker = createPointMarker(pointData);
+    // Add to cluster group individually (used for single-point additions)
+    markerClusterGroup.addLayer(marker);
+
     const point = {
       name: pointData.name,
       lat: pointData.lat,
@@ -793,7 +803,34 @@ classes: wide
       firebaseDocId: firebaseDocId || null
     };
     points.push(point);
-    
+
+    scheduleRenderPointToggles();
+  }
+
+  // Bulk add — creates all markers, adds them in one batch call, renders toggles once
+  function addPointsBatch(pointDataArray) {
+    const markers = [];
+    pointDataArray.forEach(({ pointData, fileName, firebaseDocId }) => {
+      const marker = createPointMarker(pointData);
+      markers.push(marker);
+
+      points.push({
+        name: pointData.name,
+        lat: pointData.lat,
+        lon: pointData.lon,
+        url: pointData.url,
+        metadata: pointData.metadata,
+        marker,
+        visible: true,
+        fileName,
+        firebaseDocId: firebaseDocId || null
+      });
+    });
+
+    // Single batch add — cluster recalculates once instead of per-marker
+    if (markers.length > 0) {
+      markerClusterGroup.addLayers(markers);
+    }
     renderPointToggles();
   }
 
@@ -804,13 +841,16 @@ classes: wide
       return;
     }
 
-    parsedPoints.forEach((p, idx) => {
-      const docId = docIdMap ? docIdMap[idx] : null;
-      addPoint(p, fileName, docId);
-    });
+    // Use batch add for performance
+    const batch = parsedPoints.map((p, idx) => ({
+      pointData: p,
+      fileName,
+      firebaseDocId: docIdMap ? docIdMap[idx] : null
+    }));
+    addPointsBatch(batch);
 
     // Fit map to show newly added points using cluster group
-    if (parsedPoints.length > 0 && markerClusterGroup.getLayers().length > 0) {
+    if (markerClusterGroup.getLayers().length > 0) {
       map.fitBounds(markerClusterGroup.getBounds(), { padding: [30, 30] });
     }
   }
@@ -1077,6 +1117,39 @@ classes: wide
   const loadedFirebasePointIds = new Set();
   let metaPointIdx = null; // Track point index for metadata modal
 
+  let authLoaded = false;
+
+  function loadAuthAndStorage() {
+    if (authLoaded) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const authScript = document.createElement('script');
+      authScript.src = 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js';
+      authScript.onload = () => {
+        const storageScript = document.createElement('script');
+        storageScript.src = 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js';
+        storageScript.onload = () => {
+          authLoaded = true;
+          storage = firebase.storage();
+          resolve();
+        };
+        storageScript.onerror = reject;
+        document.head.appendChild(storageScript);
+      };
+      authScript.onerror = reject;
+      document.head.appendChild(authScript);
+    });
+  }
+
+  function setupAuth() {
+    firebase.auth().onAuthStateChanged(user => {
+      currentUser = user;
+      updateAuthUI();
+      // Reload to pick up any admin-only features
+      loadFirebaseRoutes();
+      loadFirebasePoints();
+    });
+  }
+
   function initFirebase() {
     // Check if config is set (not placeholder values)
     if (typeof FIREBASE_CONFIG === 'undefined' ||
@@ -1090,33 +1163,44 @@ classes: wide
     try {
       firebase.initializeApp(FIREBASE_CONFIG);
       db = firebase.firestore();
-      storage = firebase.storage();
+      // Enable local persistence — repeat visits serve data from cache first
+      db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+        if (err.code !== 'failed-precondition' && err.code !== 'unimplemented') {
+          console.warn('Firestore persistence error:', err);
+        }
+      });
       firebaseReady = true;
+
+      // Load read-only data immediately (no auth needed)
+      loadFirebaseRoutes();
+      loadFirebasePoints();
 
       const authBtn = document.getElementById('auth-btn');
       authBtn.style.display = '';
 
-      firebase.auth().onAuthStateChanged(user => {
-        currentUser = user;
-        updateAuthUI();
-        loadFirebaseRoutes();
-        loadFirebasePoints();
-      });
-
-      // Load routes and points immediately — don't wait for auth state
-      loadFirebaseRoutes();
-      loadFirebasePoints();
-
+      // Lazy-load auth & storage SDKs only when user clicks Sign In
       authBtn.addEventListener('click', () => {
-        if (currentUser) {
+        if (authLoaded && currentUser) {
           firebase.auth().signOut();
-        } else {
-          const provider = new firebase.auth.GoogleAuthProvider();
-          firebase.auth().signInWithPopup(provider).catch(err => {
+          return;
+        }
+        authBtn.disabled = true;
+        authBtn.textContent = 'Loading...';
+        loadAuthAndStorage()
+          .then(() => {
+            setupAuth();
+            if (!currentUser) {
+              const provider = new firebase.auth.GoogleAuthProvider();
+              return firebase.auth().signInWithPopup(provider);
+            }
+          })
+          .catch(err => {
             console.error('Auth error:', err);
             alert('Sign-in failed: ' + err.message);
+          })
+          .finally(() => {
+            authBtn.disabled = false;
           });
-        }
       });
     } catch (err) {
       console.error('Firebase init error:', err);
@@ -1205,18 +1289,30 @@ classes: wide
 
     db.collection('points').orderBy('uploadedAt', 'desc').get()
       .then(snapshot => {
+        const batch = [];
         snapshot.forEach(doc => {
           if (loadedFirebasePointIds.has(doc.id)) return;
           loadedFirebasePointIds.add(doc.id);
           const data = doc.data();
-          addPoint({
-            name: data.name,
-            lat: data.lat,
-            lon: data.lon,
-            url: data.url,
-            metadata: data.metadata || {}
-          }, data.fileName, doc.id);
+          batch.push({
+            pointData: {
+              name: data.name,
+              lat: data.lat,
+              lon: data.lon,
+              url: data.url,
+              metadata: data.metadata || {}
+            },
+            fileName: data.fileName,
+            firebaseDocId: doc.id
+          });
         });
+        if (batch.length > 0) {
+          addPointsBatch(batch);
+          // Fit map to show all points
+          if (markerClusterGroup.getLayers().length > 0) {
+            map.fitBounds(markerClusterGroup.getBounds(), { padding: [30, 30] });
+          }
+        }
       })
       .catch(err => console.error('Firestore points read error:', err));
   }
