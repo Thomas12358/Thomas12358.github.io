@@ -359,6 +359,41 @@ classes: wide
   }
 
   .back-link:hover { text-decoration: underline; }
+
+  /* ── Loading overlay ─────────────────────────────────── */
+  #admin-loading {
+    text-align: center;
+    padding: 2em 1em;
+    color: #888;
+    transition: opacity 0.4s ease;
+  }
+
+  #admin-loading.fade-out {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  #admin-loading .loading-text {
+    font-size: 0.9em;
+    margin-bottom: 0.8em;
+  }
+
+  #admin-loading .progress-bar {
+    width: 200px;
+    height: 4px;
+    background: #333;
+    border-radius: 2px;
+    overflow: hidden;
+    margin: 0 auto;
+  }
+
+  #admin-loading .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: #58a6ff;
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
 </style>
 
 <!-- Auth gate -->
@@ -397,6 +432,12 @@ classes: wide
     <input type="text" id="bulk-value" placeholder="New value...">
     <button class="roots-btn primary" id="bulk-apply-btn">Apply</button>
     <button class="roots-btn" id="bulk-clear-btn">Clear Selection</button>
+  </div>
+
+  <!-- Loading overlay -->
+  <div id="admin-loading">
+    <div class="loading-text" id="admin-loading-text">Loading data...</div>
+    <div class="progress-bar"><div class="progress-fill" id="admin-progress-fill"></div></div>
   </div>
 
   <!-- Data table -->
@@ -444,11 +485,9 @@ classes: wide
   </div>
 </div>
 
-<!-- Firebase SDK -->
+<!-- Firebase SDK — only app + firestore loaded upfront (auth lazy-loaded on sign-in) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 <script src="{{ '/assets/js/firebase-config.js' | relative_url }}"></script>
 
 <script>
@@ -473,27 +512,20 @@ classes: wide
   const HIDDEN_FIELDS = ['gpxContent', 'uploadedAt', 'storagePath'];
 
   // ── Firebase Init ─────────────────────────────────────
-  function initFirebase() {
-    if (typeof FIREBASE_CONFIG === 'undefined' || !FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey === 'YOUR_API_KEY') {
-      document.getElementById('admin-auth-status').textContent = 'Firebase not configured.';
-      return;
-    }
+  let authLoaded = false;
 
-    firebase.initializeApp(FIREBASE_CONFIG);
-    db = firebase.firestore();
-
-    const authBtn = document.getElementById('admin-auth-btn');
-    authBtn.addEventListener('click', () => {
-      if (currentUser) {
-        firebase.auth().signOut();
-      } else {
-        const provider = new firebase.auth.GoogleAuthProvider();
-        firebase.auth().signInWithPopup(provider).catch(err => {
-          document.getElementById('admin-auth-status').textContent = 'Sign-in failed: ' + err.message;
-        });
-      }
+  function loadAuthSDK() {
+    if (authLoaded) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js';
+      script.onload = () => { authLoaded = true; resolve(); };
+      script.onerror = reject;
+      document.head.appendChild(script);
     });
+  }
 
+  function setupAuth() {
     firebase.auth().onAuthStateChanged(user => {
       currentUser = user;
       if (user && user.email === ADMIN_EMAIL) {
@@ -513,6 +545,66 @@ classes: wide
     });
   }
 
+  function initFirebase() {
+    if (typeof FIREBASE_CONFIG === 'undefined' || !FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey === 'YOUR_API_KEY') {
+      document.getElementById('admin-auth-status').textContent = 'Firebase not configured.';
+      return;
+    }
+
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+
+    // Enable local persistence — repeat visits serve data from cache first
+    db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+      if (err.code !== 'failed-precondition' && err.code !== 'unimplemented') {
+        console.warn('Firestore persistence error:', err);
+      }
+    });
+
+    const authBtn = document.getElementById('admin-auth-btn');
+
+    // Lazy-load Auth SDK only when user clicks Sign In
+    authBtn.addEventListener('click', () => {
+      if (authLoaded && currentUser) {
+        firebase.auth().signOut();
+        return;
+      }
+      authBtn.disabled = true;
+      authBtn.textContent = 'Loading...';
+      loadAuthSDK()
+        .then(() => {
+          setupAuth();
+          if (!currentUser) {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            return firebase.auth().signInWithPopup(provider);
+          }
+        })
+        .catch(err => {
+          console.error('Auth error:', err);
+          document.getElementById('admin-auth-status').textContent = 'Sign-in failed: ' + err.message;
+        })
+        .finally(() => {
+          authBtn.disabled = false;
+        });
+    });
+  }
+
+  // ── Loading progress ──────────────────────────────────
+  function showLoadingProgress(pct, text) {
+    const fill = document.getElementById('admin-progress-fill');
+    const loadingText = document.getElementById('admin-loading-text');
+    const loadingEl = document.getElementById('admin-loading');
+    if (fill) fill.style.width = pct + '%';
+    if (loadingText) loadingText.textContent = text || 'Loading data...';
+    if (loadingEl && pct >= 100) {
+      loadingEl.classList.add('fade-out');
+      setTimeout(() => { loadingEl.style.display = 'none'; }, 400);
+    } else if (loadingEl && pct < 100) {
+      loadingEl.style.display = '';
+      loadingEl.classList.remove('fade-out');
+    }
+  }
+
   // ── Load Collection ───────────────────────────────────
   function loadCollection() {
     allDocs = [];
@@ -520,20 +612,25 @@ classes: wide
     selectedIds.clear();
     updateBulkBar();
     updateSaveButtons();
-    document.getElementById('table-status').textContent = 'Loading...';
+    showLoadingProgress(10, 'Fetching ' + currentCollection + '...');
 
     db.collection(currentCollection).orderBy('uploadedAt', 'desc').get()
       .then(snapshot => {
+        showLoadingProgress(50, 'Processing ' + snapshot.size + ' documents...');
         snapshot.forEach(doc => {
           allDocs.push({ id: doc.id, data: doc.data() });
         });
         detectColumns();
+        showLoadingProgress(70, 'Building filters...');
         populateGroupFilter();
+        showLoadingProgress(85, 'Rendering table...');
         applyFilters();
+        showLoadingProgress(100, 'Done');
         document.getElementById('table-status').textContent = allDocs.length + ' documents loaded';
       })
       .catch(err => {
         console.error('Load error:', err);
+        showLoadingProgress(100, 'Error');
         document.getElementById('table-status').textContent = 'Error loading data: ' + err.message;
       });
   }
@@ -648,9 +745,15 @@ classes: wide
     });
     tbody.innerHTML = bodyHtml;
 
-    // Populate bulk field dropdown
+    // Update select-all state
+    const selectAll = document.getElementById('select-all');
+    if (selectAll) {
+      selectAll.checked = filteredDocs.length > 0 && filteredDocs.every(d => selectedIds.has(d.id));
+    }
+
+    // Populate bulk field dropdown & init event delegation (once)
     populateBulkFieldDropdown();
-    bindTableEvents();
+    initTableEventDelegation();
   }
 
   // ── Get value from doc by column name ─────────────────
@@ -662,78 +765,86 @@ classes: wide
     return doc.data[col];
   }
 
-  // ── Bind table events ─────────────────────────────────
-  function bindTableEvents() {
-    // Select all checkbox
-    const selectAll = document.getElementById('select-all');
-    if (selectAll) {
-      selectAll.checked = filteredDocs.length > 0 && filteredDocs.every(d => selectedIds.has(d.id));
-      selectAll.addEventListener('change', () => {
+  // ── Table event delegation (bound once, not per-render) ──
+  let _tableEventsInitialized = false;
+
+  function initTableEventDelegation() {
+    if (_tableEventsInitialized) return;
+    _tableEventsInitialized = true;
+
+    const table = document.getElementById('admin-table');
+
+    // Delegate change events (checkboxes)
+    table.addEventListener('change', (e) => {
+      const target = e.target;
+
+      // Select-all checkbox
+      if (target.id === 'select-all') {
         filteredDocs.forEach(doc => {
-          if (selectAll.checked) selectedIds.add(doc.id);
+          if (target.checked) selectedIds.add(doc.id);
           else selectedIds.delete(doc.id);
         });
         renderTable();
         updateBulkBar();
-      });
-    }
+        return;
+      }
 
-    // Individual checkboxes
-    document.querySelectorAll('.row-checkbox').forEach(cb => {
-      cb.addEventListener('change', () => {
-        const id = cb.dataset.id;
-        if (cb.checked) selectedIds.add(id);
+      // Individual row checkboxes
+      if (target.classList.contains('row-checkbox')) {
+        const id = target.dataset.id;
+        if (target.checked) selectedIds.add(id);
         else selectedIds.delete(id);
-        cb.closest('tr').classList.toggle('selected', cb.checked);
+        target.closest('tr').classList.toggle('selected', target.checked);
         updateBulkBar();
-        // Update select-all state
         const sa = document.getElementById('select-all');
         if (sa) sa.checked = filteredDocs.length > 0 && filteredDocs.every(d => selectedIds.has(d.id));
-      });
+      }
     });
 
-    // Inline cell editing
-    document.querySelectorAll('#admin-table td[contenteditable="true"]').forEach(td => {
-      // Store original for comparison
+    // Delegate blur events (inline cell editing)
+    table.addEventListener('focusout', (e) => {
+      const td = e.target;
+      if (td.tagName !== 'TD' || td.getAttribute('contenteditable') !== 'true') return;
+
       const docId = td.dataset.id;
       const col = td.dataset.col;
       const originalDoc = allDocs.find(d => d.id === docId);
       const originalVal = originalDoc ? String(getDocValue(originalDoc, col) || '') : '';
+      const newVal = td.textContent.trim();
 
-      td.addEventListener('blur', () => {
-        const newVal = td.textContent.trim();
-        if (newVal !== originalVal) {
-          if (!changes[docId]) changes[docId] = {};
-          changes[docId][col] = newVal;
-          td.classList.add('changed');
-        } else {
-          if (changes[docId]) {
-            delete changes[docId][col];
-            if (Object.keys(changes[docId]).length === 0) delete changes[docId];
-          }
-          td.classList.remove('changed');
+      if (newVal !== originalVal) {
+        if (!changes[docId]) changes[docId] = {};
+        changes[docId][col] = newVal;
+        td.classList.add('changed');
+      } else {
+        if (changes[docId]) {
+          delete changes[docId][col];
+          if (Object.keys(changes[docId]).length === 0) delete changes[docId];
         }
-        updateSaveButtons();
-      });
+        td.classList.remove('changed');
+      }
+      updateSaveButtons();
+    });
 
-      // Prevent Enter from creating new lines, just blur
-      td.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
+    // Delegate keydown events (Enter/Tab in editable cells)
+    table.addEventListener('keydown', (e) => {
+      const td = e.target;
+      if (td.tagName !== 'TD' || td.getAttribute('contenteditable') !== 'true') return;
+
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        td.blur();
+      }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const allEditable = Array.from(table.querySelectorAll('td[contenteditable="true"]'));
+        const idx = allEditable.indexOf(td);
+        const next = e.shiftKey ? allEditable[idx - 1] : allEditable[idx + 1];
+        if (next) {
           td.blur();
+          next.focus();
         }
-        // Tab to next editable cell
-        if (e.key === 'Tab') {
-          e.preventDefault();
-          const allEditable = Array.from(document.querySelectorAll('#admin-table td[contenteditable="true"]'));
-          const idx = allEditable.indexOf(td);
-          const next = e.shiftKey ? allEditable[idx - 1] : allEditable[idx + 1];
-          if (next) {
-            td.blur();
-            next.focus();
-          }
-        }
-      });
+      }
     });
   }
 
@@ -1065,9 +1176,13 @@ classes: wide
     });
   });
 
-  // Filters
+  // Filters (search is debounced to avoid excessive re-renders on every keystroke)
+  let _searchTimer = null;
   document.getElementById('group-filter').addEventListener('change', applyFilters);
-  document.getElementById('search-input').addEventListener('input', applyFilters);
+  document.getElementById('search-input').addEventListener('input', () => {
+    if (_searchTimer) clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(applyFilters, 150);
+  });
 
   // Bulk edit
   document.getElementById('bulk-apply-btn').addEventListener('click', applyBulkEdit);
