@@ -260,6 +260,51 @@ classes: wide
     font-style: italic;
   }
 
+  /* Loading overlay */
+  #map-loading {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(20, 24, 33, 0.85);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    transition: opacity 0.4s ease;
+  }
+
+  #map-loading.fade-out {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  #map-loading .loading-text {
+    color: #aaa;
+    font-size: 0.9em;
+    margin-bottom: 0.8em;
+  }
+
+  #map-loading .progress-bar {
+    width: 200px;
+    height: 4px;
+    background: #333;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  #map-loading .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: #58a6ff;
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+
+  #map-wrapper {
+    position: relative;
+  }
+
   /* Marker cluster custom styling */
   .marker-cluster-small {
     background-color: rgba(88, 166, 255, 0.6);
@@ -366,7 +411,13 @@ classes: wide
   </div>
 </div>
 
-<div id="map"></div>
+<div id="map-wrapper">
+  <div id="map-loading">
+    <div class="loading-text" id="loading-text">Loading routes & points...</div>
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+  </div>
+  <div id="map"></div>
+</div>
 <div id="route-stats"></div>
 
 <!-- Firebase SDK — only app + firestore loaded upfront (auth & storage lazy-loaded on sign-in) -->
@@ -649,13 +700,16 @@ classes: wide
     fetch('{{ "/assets/gpx/routes.json" | relative_url }}')
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(files => {
+        if (files.length === 0) { markLoaded('bundled'); return; }
+        let loaded = 0;
         files.forEach(f => {
           fetch('{{ "/assets/gpx/" | relative_url }}' + f)
             .then(r => r.text())
-            .then(txt => addRoute(txt, f));
+            .then(txt => { addRoute(txt, f); })
+            .finally(() => { loaded++; if (loaded >= files.length) markLoaded('bundled'); });
         });
       })
-      .catch(() => { /* no bundled routes yet */ });
+      .catch(() => { markLoaded('bundled'); });
   }
 
   // Local file input
@@ -1117,6 +1171,26 @@ classes: wide
   const loadedFirebasePointIds = new Set();
   let metaPointIdx = null; // Track point index for metadata modal
 
+  // ── Loading progress tracker ──────────────────────────────
+  const _loadTasks = { routes: false, points: false, bundled: false };
+  function markLoaded(task) {
+    _loadTasks[task] = true;
+    const done = Object.values(_loadTasks).filter(Boolean).length;
+    const total = Object.keys(_loadTasks).length;
+    const pct = Math.round((done / total) * 100);
+    const fill = document.getElementById('progress-fill');
+    const text = document.getElementById('loading-text');
+    if (fill) fill.style.width = pct + '%';
+    if (text) text.textContent = done < total ? 'Loading data... ' + pct + '%' : 'Done';
+    if (done >= total) {
+      const overlay = document.getElementById('map-loading');
+      if (overlay) {
+        overlay.classList.add('fade-out');
+        setTimeout(() => overlay.remove(), 500);
+      }
+    }
+  }
+
   let authLoaded = false;
 
   function loadAuthAndStorage() {
@@ -1157,6 +1231,8 @@ classes: wide
         FIREBASE_CONFIG.apiKey === 'YOUR_API_KEY') {
       console.log('Roots: Firebase not configured — running in local-only mode.');
       document.getElementById('auth-btn').style.display = 'none';
+      markLoaded('routes');
+      markLoaded('points');
       return;
     }
 
@@ -1279,8 +1355,9 @@ classes: wide
               .catch(err => console.error('Error loading route ' + data.fileName + ':', err));
           }
         });
+        markLoaded('routes');
       })
-      .catch(err => console.error('Firestore read error:', err));
+      .catch(err => { console.error('Firestore read error:', err); markLoaded('routes'); });
   }
 
   // ── Load points from Firestore ──────────────────────────────
@@ -1313,8 +1390,9 @@ classes: wide
             map.fitBounds(markerClusterGroup.getBounds(), { padding: [30, 30] });
           }
         }
+        markLoaded('points');
       })
-      .catch(err => console.error('Firestore points read error:', err));
+      .catch(err => { console.error('Firestore points read error:', err); markLoaded('points'); });
   }
 
   // ── Upload GPX to Firebase ─────────────────────────────────
