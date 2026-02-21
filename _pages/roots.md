@@ -369,8 +369,7 @@ classes: wide
   <button class="roots-btn" id="add-csv-btn" title="Load a CSV file with GPS points">+ Add CSV Points</button>
   <input type="file" id="csv-file-input" accept=".csv" multiple style="display:none;">
   <button class="roots-btn" id="add-gmaps-btn" title="Add a point from Google Maps URL">+ Add Google Maps Point</button>
-  <span id="route-toggles"></span>
-  <span id="point-toggles"></span>
+  <span id="type-filters"></span>
   <button class="roots-btn" id="fit-bounds-btn" title="Zoom to fit all routes">Fit All</button>
 </div>
 
@@ -474,7 +473,8 @@ classes: wide
   };
 
   function getPointIcon(type) {
-    const key = type && POINT_TYPE_ICONS[type] ? type : '_default';
+    const key = normalizePointType(type);
+
     const iconDef = POINT_TYPE_ICONS[key];
     return L.divIcon({
       html: iconDef.svg,
@@ -483,6 +483,28 @@ classes: wide
       iconAnchor: POINT_ICON_ANCHOR,
       popupAnchor: POINT_POPUP_ANCHOR
     });
+  }
+
+  function normalizePointType(type) {
+    const rawType = type ? String(type).trim() : '';
+    if (!rawType) return '_default';
+
+    if (/onsen/i.test(rawType)) return 'Onsen';
+    if (/camp/i.test(rawType)) return 'Campsite';
+    if (/roadside\s*station/i.test(rawType)) return 'Roadside Station';
+    if (/must\s*see/i.test(rawType)) return 'Must See';
+    if (/hotel/i.test(rawType)) return 'Hotel';
+    if (/other/i.test(rawType)) return 'Other';
+
+    return POINT_TYPE_ICONS[rawType] ? rawType : 'Other';
+  }
+
+  function getPointType(pointData) {
+    const rawType = pointData && pointData.metadata
+      ? (pointData.metadata.Type || pointData.metadata.type || pointData.type || null)
+      : (pointData ? pointData.type : null);
+    const normalized = normalizePointType(rawType);
+    return normalized === '_default' ? 'Other' : normalized;
   }
 
   const map = L.map('map').setView([49.25, -123.1], 11);
@@ -494,7 +516,12 @@ classes: wide
 
   // Create marker cluster group for points
   const markerClusterGroup = L.markerClusterGroup({
-    maxClusterRadius: 60,
+    maxClusterRadius: function(zoom) {
+      if (zoom >= 14) return 24;
+      if (zoom >= 12) return 40;
+      return 60;
+    },
+    disableClusteringAtZoom: 15,
     spiderfyOnMaxZoom: true,
     showCoverageOnHover: false,
     zoomToBoundsOnClick: true,
@@ -621,6 +648,7 @@ classes: wide
 
   function renderToggles() {
     const container = document.getElementById('route-toggles');
+    if (!container) return;
     container.innerHTML = '';
     routes.forEach((r, i) => {
       const lbl = document.createElement('label');
@@ -773,7 +801,10 @@ classes: wide
     const nameIdx = headers.findIndex(h => h.toLowerCase() === 'name');
     const latIdx = headers.findIndex(h => h.toLowerCase() === 'latitude' || h.toLowerCase() === 'lat');
     const lonIdx = headers.findIndex(h => h.toLowerCase() === 'longitude' || h.toLowerCase() === 'lon' || h.toLowerCase() === 'lng');
-    const urlIdx = headers.findIndex(h => h.toLowerCase() === 'url' || h.toLowerCase() === 'link' || h.toLowerCase() === 'page');
+    const urlIdx = headers.findIndex(h => {
+      const key = h.toLowerCase().trim();
+      return key === 'url' || key === 'link' || key === 'page' || key === 'website';
+    });
     
     if (latIdx === -1 || lonIdx === -1) {
       alert('CSV must have latitude and longitude columns');
@@ -809,6 +840,18 @@ classes: wide
     return parsedPoints;
   }
 
+  function resolvePointUrl(data, metadata) {
+    const fromData = data && (
+      data.url || data.URL || data.link || data.Link || data.website || data.Website || data.page || data.Page
+    );
+    if (fromData) return String(fromData).trim();
+
+    const fromMeta = metadata && (
+      metadata.url || metadata.URL || metadata.link || metadata.Link || metadata.website || metadata.Website || metadata.page || metadata.Page
+    );
+    return fromMeta ? String(fromMeta).trim() : null;
+  }
+
   // Debounced toggle rendering — avoids rebuilding DOM hundreds of times during bulk loads
   let _toggleTimer = null;
   function scheduleRenderPointToggles() {
@@ -816,8 +859,37 @@ classes: wide
     _toggleTimer = setTimeout(renderPointToggles, 50);
   }
 
+  const pointTypeFilters = new Set();
+
+  function getAvailablePointTypes() {
+    const available = new Set();
+    points.forEach(p => {
+      const type = p.type || 'Other';
+      available.add(type);
+    });
+
+    if (available.size === 0) {
+      ['Onsen', 'Campsite', 'Roadside Station', 'Must See', 'Hotel', 'Other'].forEach(t => available.add(t));
+    }
+
+    return Array.from(available);
+  }
+
+  function applyPointTypeFilters() {
+    points.forEach(p => {
+      const type = p.type || 'Other';
+      const show = p.visible !== false && pointTypeFilters.has(type);
+      if (show) {
+        markerClusterGroup.addLayer(p.marker);
+      } else {
+        markerClusterGroup.removeLayer(p.marker);
+      }
+    });
+  }
+
   function createPointMarker(pointData) {
-    const pointType = pointData.metadata ? (pointData.metadata.Type || pointData.metadata.type || null) : null;
+    const pointType = getPointType(pointData);
+    const pointUrl = resolvePointUrl(pointData, pointData.metadata);
     const marker = L.marker([pointData.lat, pointData.lon], {
       icon: getPointIcon(pointType)
     });
@@ -833,8 +905,8 @@ classes: wide
         popupContent += '<br><span style="color:#aaa;font-size:0.88em;font-style:italic;">' + escapeHtml(notes) + '</span>';
       }
     }
-    if (pointData.url) {
-      popupContent += '<br><a href="' + escapeAttr(pointData.url) + '" target="_blank" rel="noopener" aria-label="View details for ' + escapeAttr(pointData.name) + '">View Details</a>';
+    if (pointUrl) {
+      popupContent += '<br><a href="' + escapeAttr(pointUrl) + '" target="_blank" rel="noopener" aria-label="View details for ' + escapeAttr(pointData.name) + '">View Details</a>';
     }
     marker.bindPopup(popupContent);
     return marker;
@@ -849,7 +921,8 @@ classes: wide
       name: pointData.name,
       lat: pointData.lat,
       lon: pointData.lon,
-      url: pointData.url,
+      url: resolvePointUrl(pointData, pointData.metadata),
+      type: getPointType(pointData),
       metadata: pointData.metadata,
       marker,
       visible: true,
@@ -872,7 +945,8 @@ classes: wide
         name: pointData.name,
         lat: pointData.lat,
         lon: pointData.lon,
-        url: pointData.url,
+        url: resolvePointUrl(pointData, pointData.metadata),
+        type: getPointType(pointData),
         metadata: pointData.metadata,
         marker,
         visible: true,
@@ -917,69 +991,46 @@ classes: wide
   }
 
   function renderPointToggles() {
-    const container = document.getElementById('point-toggles');
+    const container = document.getElementById('type-filters') || document.getElementById('point-toggles');
+    if (!container) return;
     container.innerHTML = '';
-    
-    // Group points by fileName
-    const groupedPoints = {};
-    points.forEach((p, idx) => {
-      const key = p.fileName || 'Unnamed';
-      if (!groupedPoints[key]) groupedPoints[key] = [];
-      groupedPoints[key].push({ point: p, idx });
-    });
-    
-    Object.entries(groupedPoints).forEach(([fileName, pointGroup]) => {
+
+    const availableTypes = getAvailablePointTypes();
+
+    if (pointTypeFilters.size === 0) {
+      availableTypes.forEach(type => pointTypeFilters.add(type));
+    } else {
+      availableTypes.forEach(type => {
+        if (!pointTypeFilters.has(type)) {
+          pointTypeFilters.add(type);
+        }
+      });
+    }
+
+    availableTypes.forEach(type => {
+      const count = points.filter(p => (p.type || 'Other') === type).length;
       const lbl = document.createElement('label');
       const cb = document.createElement('input');
       cb.type = 'checkbox';
-      cb.checked = pointGroup[0].point.visible;
-      cb.addEventListener('change', () => togglePointGroup(fileName));
-      
+      cb.checked = pointTypeFilters.has(type);
+      cb.addEventListener('change', () => togglePointType(type, cb.checked));
+
       lbl.appendChild(cb);
-      lbl.appendChild(document.createTextNode('📍 ' + fileName + ' (' + pointGroup.length + ')'));
-      
-      // Show info button for Firebase points
-      if (pointGroup[0].point.firebaseDocId) {
-        const info = document.createElement('button');
-        info.className = 'info-btn';
-        info.textContent = 'ℹ';
-        info.title = 'Point group info';
-        info.addEventListener('click', (e) => { 
-          e.preventDefault(); 
-          e.stopPropagation(); 
-          openPointMetadataModal(pointGroup[0].idx); 
-        });
-        lbl.appendChild(info);
-      }
-      
-      // Show delete button for Firebase points when admin is logged in
-      if (pointGroup[0].point.firebaseDocId && isAdmin()) {
-        const del = document.createElement('button');
-        del.className = 'delete-btn';
-        del.textContent = '✕';
-        del.title = 'Delete from Firebase';
-        del.addEventListener('click', (e) => { 
-          e.preventDefault(); 
-          deleteFirebasePoints(fileName); 
-        });
-        lbl.appendChild(del);
-      }
-      
+      lbl.appendChild(document.createTextNode(type + ' (' + count + ')'));
+
       container.appendChild(lbl);
     });
+
+    applyPointTypeFilters();
   }
 
-  function togglePointGroup(fileName) {
-    points.forEach(p => {
-      if (p.fileName === fileName) {
-        p.visible = !p.visible;
-        if (p.visible) {
-          markerClusterGroup.addLayer(p.marker);
-        } else {
-          markerClusterGroup.removeLayer(p.marker);
-        }
-      }
-    });
+  function togglePointType(type, isChecked) {
+    if (isChecked) {
+      pointTypeFilters.add(type);
+    } else {
+      pointTypeFilters.delete(type);
+    }
+    applyPointTypeFilters();
   }
 
   function openPointMetadataModal(idx) {
@@ -1007,9 +1058,10 @@ classes: wide
   function renderPointMetadataView(data) {
     let html = '';
     
-    if (data.url) {
+    const sourceUrl = resolvePointUrl(data, data.metadata);
+    if (sourceUrl) {
       html += '<label>Source Link</label>';
-      html += '<div class="meta-view-value"><a class="meta-link" href="' + escapeAttr(data.url) + '" target="_blank" rel="noopener">' + escapeHtml(data.url) + '</a></div>';
+      html += '<div class="meta-view-value"><a class="meta-link" href="' + escapeAttr(sourceUrl) + '" target="_blank" rel="noopener">' + escapeHtml(sourceUrl) + '</a></div>';
     }
     
     html += '<label>Location</label>';
@@ -1376,7 +1428,7 @@ classes: wide
               name: data.name,
               lat: data.lat,
               lon: data.lon,
-              url: data.url,
+              url: resolvePointUrl(data, data.metadata),
               metadata: data.metadata || {}
             },
             fileName: data.fileName,
@@ -1709,6 +1761,8 @@ classes: wide
 
 Drop your `.gpx` files onto the **+ Add GPX** button to visualize bike routes on the map, or use **+ Add CSV Points** to add individual GPS points from a CSV file. Toggle routes and points on/off with the checkboxes and view distance & elevation stats below the map.
 
-**CSV Format:** Your CSV file should have columns for `name`, `latitude`, `longitude`, and optionally `url` (for a link to more details). All other columns will be stored as metadata and displayed when you click the info button.
+**CSV Format:** Your CSV file should have columns for `name`, `latitude`, `longitude`, and optionally `url`, `link`, or `website` (for a link to more details). All other columns will be stored as metadata and displayed when you click the info button.
+
+**Type Filters:** The checkboxes at the top filter points by type (Onsen, Campsite, Roadside Station, Must See, Hotel, Other).
 
 **Firebase mode:** Sign in with Google to upload GPX and CSV files directly to Firebase Storage. Uploaded routes and points are persisted and will load automatically for all visitors. See `assets/js/firebase-config.js` to connect your Firebase project.
