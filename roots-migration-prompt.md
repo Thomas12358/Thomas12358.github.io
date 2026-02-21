@@ -26,12 +26,12 @@ The `/roots/` page is a full interactive web app (~60 KB of inline HTML/CSS/JS) 
 
 | File | Description |
 |------|-------------|
-| `_pages/roots.md` | Main app page (~1 760 lines, all logic inline) |
-| `_pages/admin.md` | Admin CRUD panel (~1 200 lines, all logic inline) |
-| `assets/js/firebase-config.js` | Firebase project config + admin email constant |
-| `assets/gpx/routes.json` | Static GPX manifest (currently `[]` – data lives in Firestore) |
-| `assets/csv/example_points.csv` | Sample CSV for point imports |
-| `assets/csv/README.md` | CSV format documentation |
+| [`_pages/roots.md`](https://github.com/Thomas12358/Thomas12358.github.io/blob/main/_pages/roots.md) | Main app page (~1 760 lines, all logic inline) |
+| [`_pages/admin.md`](https://github.com/Thomas12358/Thomas12358.github.io/blob/main/_pages/admin.md) | Admin CRUD panel (~1 200 lines, all logic inline) |
+| [`assets/js/firebase-config.js`](https://github.com/Thomas12358/Thomas12358.github.io/blob/main/assets/js/firebase-config.js) | Firebase project config + admin email constant |
+| [`assets/gpx/routes.json`](https://github.com/Thomas12358/Thomas12358.github.io/blob/main/assets/gpx/routes.json) | Static GPX manifest (currently `[]` – data lives in Firestore) |
+| [`assets/csv/example_points.csv`](https://github.com/Thomas12358/Thomas12358.github.io/blob/main/assets/csv/example_points.csv) | Sample CSV for point imports |
+| [`assets/csv/README.md`](https://github.com/Thomas12358/Thomas12358.github.io/blob/main/assets/csv/README.md) | CSV format documentation |
 
 ---
 
@@ -63,10 +63,10 @@ load `firebase-config.js` (or inline the config object) so the same Firestore co
 
 ## What needs to change in the **source** site (Thomas12358.github.io) after migration
 
-1. Remove the `Roots` entry from `_data/navigation.yml`.
-2. Delete (or archive) `_pages/roots.md` and `_pages/admin.md`.
+1. Remove the `Roots` entry from [`_data/navigation.yml`](https://github.com/Thomas12358/Thomas12358.github.io/blob/main/_data/navigation.yml).
+2. Delete (or archive) [`_pages/roots.md`](https://github.com/Thomas12358/Thomas12358.github.io/blob/main/_pages/roots.md) and [`_pages/admin.md`](https://github.com/Thomas12358/Thomas12358.github.io/blob/main/_pages/admin.md).
 3. Optionally add a redirect from `/roots/` to the new site's URL.
-4. Keep `assets/js/firebase-config.js` only if other pages still reference it; otherwise
+4. Keep [`assets/js/firebase-config.js`](https://github.com/Thomas12358/Thomas12358.github.io/blob/main/assets/js/firebase-config.js) only if other pages still reference it; otherwise
    delete it too.
 
 ---
