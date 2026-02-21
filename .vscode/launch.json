@@ -1,0 +1,27 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Jekyll: Serve (Terminal)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "bundle exec jekyll serve --livereload --incremental"
+    },
+    {
+      "name": "Jekyll: Open in Chrome",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://127.0.0.1:4000",
+      "webRoot": "${workspaceFolder}"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Jekyll: Serve + Chrome",
+      "configurations": [
+        "Jekyll: Serve (Terminal)",
+        "Jekyll: Open in Chrome"
+      ]
+    }
+  ]
+}
